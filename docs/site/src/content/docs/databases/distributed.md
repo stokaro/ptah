@@ -384,8 +384,11 @@ live policy alone instead of removing it, and HCL export reports the policy it
 cannot write.
 
 A CockroachDB dev database is required for dev-database workflows on a
-CockroachDB target; a mismatched `--dev-url` is refused with
-`--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
+CockroachDB target. A dev database of another engine is refused before
+anything runs. `ptah schema apply` answers
+`--dev-url dialect "postgres" does not match --db-url dialect "cockroachdb"`,
+and `ptah-compat` names the target `--url`, as the Atlas CLI does. A dev URL
+read from `ptah.yaml` is named as the dev database named in the project file.
 
 ## Invisible indexes
 

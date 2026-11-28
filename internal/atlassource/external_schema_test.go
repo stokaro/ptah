@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/testutils"
+	"ptah.run/internal/urlname"
 )
 
 // externalHelperModes maps a mode name to the behavior the re-executed test
@@ -176,8 +177,8 @@ func TestResolveExternalSchema_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	state, err := set.Resolve(projectconfig.AtlasCompatible(t.Context()), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--dev-url",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--dev-url"),
 	})
 
 	c.Assert(err, qt.IsNil)

@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/readscope"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrator"
 )
 
@@ -105,6 +106,10 @@ type PlanRehearsalOptions struct {
 	// asks the dev database the rehearsal runs on, which is what a plan that
 	// records no schema, such as an Atlas .plan.hcl document, leaves to decide.
 	PlacedSchema string
+	// Names says how an error names the target and dev database URLs, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names urlname.Names
 }
 
 // RehearsePlanStatements verifies a pre-planned migration semantically, the
@@ -170,7 +175,7 @@ func RehearsePlanStatements(
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 
-	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, conn, opts.TargetURL, opts.DesiredURLs, opts.Names)
 	if err != nil {
 		return err
 	}

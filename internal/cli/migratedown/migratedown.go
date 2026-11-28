@@ -42,6 +42,7 @@ import (
 	"ptah.run/internal/preflight"
 	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/rollbacklimit"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
@@ -422,14 +423,16 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 // Command is the command a run document names.
 const Command = "migrations down"
 
-// shadowDBFlagAsTyped names --shadow-db the way the operator spelled it:
-// ptah-compat's `migrate down` forwards its --dev-url here. It is the flag's
-// counterpart of [typedCommand], which does the same for the command name.
-func shadowDBFlagAsTyped(cmd *cobra.Command) string {
+// shadowDBNames names the target and the shadow database in an error the way
+// the operator spelled them: --db-url and --shadow-db, or the Atlas CLI's
+// --url and --dev-url, which ptah-compat's `migrate down` forwards here. It is
+// the flags' counterpart of [typedCommand], which does the same for the
+// command name.
+func shadowDBNames(cmd *cobra.Command) urlname.Names {
 	if cmdadapter.Forwarded(cmd) {
-		return "dev-url"
+		return urlname.Names{}
 	}
-	return shadowDBFlag
+	return urlname.Names{Target: urlname.Flag("--" + dbURLFlag), Dev: urlname.Flag("--" + shadowDBFlag)}
 }
 
 // checkUnusedShadowDB opens the shadow database of a run that rolls nothing
@@ -442,7 +445,7 @@ func checkUnusedShadowDB(cmd *cobra.Command, dialect, shadowDB string, timeout t
 	if !dbcli.ChecksUnusedDevURL(cmd, shadowDBFlag) {
 		return nil
 	}
-	_, err := devreach.Server(cmd.Context(), dialect, "--"+shadowDBFlagAsTyped(cmd), shadowDB, timeout)
+	_, err := devreach.Server(cmd.Context(), dialect, shadowDBNames(cmd), shadowDB, timeout)
 	return err
 }
 

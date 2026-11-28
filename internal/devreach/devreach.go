@@ -33,11 +33,13 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/urlname"
 )
 
 // Server opens devURL and answers what its server can do, or the reason it
-// could not be opened. source names devURL in an error the way the operator
-// gave it, such as `--dev-url` or the dev database a project file names.
+// could not be opened. names says how an error names devURL and the target,
+// the way the operator gave them, such as `--dev-url` or the dev database a
+// project file names; see [urlname.Names].
 //
 // A URL of only spaces answers nil and no error: the command was given none.
 // Any other URL is taken as written, so a docker:// URL behind a space is no
@@ -64,10 +66,10 @@ import (
 // a scheme an executable provider in ctx serves names that provider's target.
 // It is then connected to and closed again, through that provider where one
 // serves it, and a connection that fails within
-// timeout is the error, wrapped as `connect to <source>: ...`. A timeout of
+// timeout is the error, wrapped as `connect to <dev URL>: ...`. A timeout of
 // zero leaves the deadline of ctx, if any, as the only bound.
-func Server(ctx context.Context, dialect, source, devURL string, timeout time.Duration) (capability.Capabilities, error) {
-	facts, err := reach(ctx, dialect, source, devURL, timeout, nil)
+func Server(ctx context.Context, dialect string, names urlname.Names, devURL string, timeout time.Duration) (capability.Capabilities, error) {
+	facts, err := reach(ctx, dialect, names, devURL, timeout, nil)
 	return facts.Capabilities, err
 }
 
@@ -98,14 +100,15 @@ type Resolve func(context.Context, *dbschema.DatabaseConnection) (identifier.Sem
 // ServerFacts opens devURL as [Server] does and answers its capabilities and,
 // over the same connection, the session's character set facts. A failed read
 // of the facts is the error, wrapped as `read the character sets of
-// <source>: ...`.
+// <dev URL>: ...`.
 //
 // Where resolve is not nil and a connection was opened, it is called over
 // that connection too, and its answer is [Facts.IdentifierSemantics]; an
-// error from it is the error, wrapped as `resolve identifiers on <source>:
+// error from it is the error, wrapped as `resolve identifiers on <dev URL>:
 // ...`.
-func ServerFacts(ctx context.Context, dialect, source, devURL string, timeout time.Duration, resolve Resolve) (Facts, error) {
-	return reach(ctx, dialect, source, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
+func ServerFacts(ctx context.Context, dialect string, names urlname.Names, devURL string, timeout time.Duration, resolve Resolve) (Facts, error) {
+	source := names.DevSource()
+	return reach(ctx, dialect, names, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
 		if resolve != nil {
 			semantics, err := resolve(ctx, conn)
 			if err != nil {
@@ -138,7 +141,9 @@ type charsetFactsReader interface {
 // called where reach opens none.
 func reach(
 	ctx context.Context,
-	dialect, source, devURL string,
+	dialect string,
+	names urlname.Names,
+	devURL string,
 	timeout time.Duration,
 	read func(context.Context, *dbschema.DatabaseConnection, Facts) (Facts, error),
 ) (Facts, error) {
@@ -147,7 +152,7 @@ func reach(
 	}
 	if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
 		if dialect != "" && !devdocker.SameEngine(engine, dialect) {
-			return Facts{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
+			return Facts{}, names.DialectMismatch(engine, dialect)
 		}
 		return Facts{}, nil
 	}
@@ -167,7 +172,7 @@ func reach(
 		return Facts{}, nil
 	}
 	if dialect != "" {
-		if err := providerurl.ValidateDialectMatch(ctx, devURL, dialect); err != nil {
+		if err := providerurl.ValidateDialectMatch(ctx, devURL, dialect, names); err != nil {
 			return Facts{}, err
 		}
 	}
@@ -178,7 +183,7 @@ func reach(
 	}
 	conn, err := dbschema.ConnectToServer(ctx, devURL)
 	if err != nil {
-		return Facts{}, fmt.Errorf("connect to %s: %w", source, err)
+		return Facts{}, fmt.Errorf("connect to %s: %w", names.DevSource(), err)
 	}
 	defer func() { _ = conn.Close() }()
 	facts := Facts{Capabilities: conn.Info().Capabilities}

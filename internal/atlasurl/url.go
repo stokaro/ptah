@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/dburlext"
 	"ptah.run/internal/dburlext/builtin"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/urlname"
 )
 
 // dockerScheme is the URL scheme that asks Ptah to start a dev database from
@@ -295,8 +296,9 @@ func DialectFromURL(rawURL string) (string, error) {
 // ValidateDialectMatch verifies that rawURL can name a server of the dialect
 // the already-open target database has. The comparison is
 // [SchemeDialectMatches]'s, because the dialect of rawURL is read from its
-// scheme, before anything is connected.
-func ValidateDialectMatch(rawURL, targetDialect string) error {
+// scheme, before anything is connected. names says how the refusal names the
+// two URLs; see [urlname.Names].
+func ValidateDialectMatch(rawURL, targetDialect string, names urlname.Names) error {
 	dialect, err := DialectFromURL(rawURL)
 	if err != nil {
 		return err
@@ -309,7 +311,7 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 		normalizedTarget = targetDialect
 	}
 	if !SchemeDialectMatches(dialect, normalizedTarget) {
-		return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", dialect, normalizedTarget)
+		return names.DialectMismatch(dialect, normalizedTarget)
 	}
 	return nil
 }

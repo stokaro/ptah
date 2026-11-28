@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -673,11 +674,11 @@ func TestPinDialect_DevURLWins(t *testing.T) {
 	set, err := atlassource.ClassifySet("--from", []string{"sqlite://a.db"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), "sqlite://dev.db", set)
+	dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), "sqlite://dev.db", urlname.Source{}, set)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dialect, qt.Equals, "sqlite")
-	c.Assert(pinnedBy, qt.Equals, "--dev-url")
+	c.Assert(pinnedBy.String(), qt.Equals, "--dev-url")
 }
 
 func TestPinDialect_DatabaseSourcePinsWithoutDevURL(t *testing.T) {
@@ -685,11 +686,11 @@ func TestPinDialect_DatabaseSourcePinsWithoutDevURL(t *testing.T) {
 	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), "", set)
+	dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), "", urlname.Source{}, set)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dialect, qt.Equals, "postgres")
-	c.Assert(pinnedBy, qt.Equals, "--from")
+	c.Assert(pinnedBy.String(), qt.Equals, "--from")
 }
 
 func TestPinDialect_ConflictWithDevURL(t *testing.T) {
@@ -697,7 +698,7 @@ func TestPinDialect_ConflictWithDevURL(t *testing.T) {
 	set, err := atlassource.ClassifySet("--from", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	_, _, err = atlassource.PinDialect(c.Context(), "sqlite://dev.db", set)
+	_, _, err = atlassource.PinDialect(c.Context(), "sqlite://dev.db", urlname.Source{}, set)
 
 	c.Assert(err, qt.ErrorMatches, `--from database dialect "postgres" does not match --dev-url dialect "sqlite"`)
 }
@@ -709,7 +710,7 @@ func TestPinDialect_ConflictBetweenSides(t *testing.T) {
 	toSet, err := atlassource.ClassifySet("--to", []string{"mysql://localhost/app"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	_, _, err = atlassource.PinDialect(c.Context(), "", fromSet, toSet)
+	_, _, err = atlassource.PinDialect(c.Context(), "", urlname.Source{}, fromSet, toSet)
 
 	c.Assert(err, qt.ErrorMatches, `--to database dialect "mysql" does not match --from dialect "postgres"`)
 }
@@ -736,11 +737,11 @@ func TestPinDialect_MySQLFamilySpellingsAgree(t *testing.T) {
 			set, err := atlassource.ClassifySet("--from", []string{test.source}, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
-			dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), test.devURL, set)
+			dialect, pinnedBy, err := atlassource.PinDialect(c.Context(), test.devURL, urlname.Source{}, set)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(dialect, qt.Equals, test.want)
-			c.Assert(pinnedBy, qt.Equals, "--dev-url")
+			c.Assert(pinnedBy.String(), qt.Equals, "--dev-url")
 		})
 	}
 }
@@ -780,11 +781,11 @@ func TestPinDialect_HappyPath_AProviderServedEnginePins(t *testing.T) {
 		t.Run(devURL, func(t *testing.T) {
 			c := qt.New(t)
 
-			dialect, pinnedBy, err := atlassource.PinDialect(servingDuckDB(c), devURL)
+			dialect, pinnedBy, err := atlassource.PinDialect(servingDuckDB(c), devURL, urlname.Source{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(dialect, qt.Equals, "duckdb")
-			c.Assert(pinnedBy, qt.Equals, "--dev-url")
+			c.Assert(pinnedBy.String(), qt.Equals, "--dev-url")
 		})
 	}
 }
@@ -794,7 +795,7 @@ func TestPinDialect_HappyPath_AProviderServedEnginePins(t *testing.T) {
 func TestPinDialect_FailurePath_AnEngineNoSelectionServesIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	dialect, _, err := atlassource.PinDialect(c.Context(), "duckdb:///tmp/dev.db")
+	dialect, _, err := atlassource.PinDialect(c.Context(), "duckdb:///tmp/dev.db", urlname.Source{})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "duckdb:///tmp/dev.db"`)
 	c.Assert(dialect, qt.Equals, "")
@@ -804,7 +805,7 @@ func TestPinDialect_FailurePath_AnEngineNoSelectionServesIsRefused(t *testing.T)
 func TestPinDialect_FailurePath_ASchemeTheSelectionDoesNotServeIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	dialect, _, err := atlassource.PinDialect(servingDuckDB(c), "nosuch://host/dev")
+	dialect, _, err := atlassource.PinDialect(servingDuckDB(c), "nosuch://host/dev", urlname.Source{})
 
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "nosuch://host/dev"`)
 	c.Assert(dialect, qt.Equals, "")
@@ -813,7 +814,7 @@ func TestPinDialect_FailurePath_ASchemeTheSelectionDoesNotServeIsRefused(t *test
 func TestPinDialect_NothingPins(t *testing.T) {
 	c := qt.New(t)
 
-	dialect, _, err := atlassource.PinDialect(c.Context(), "")
+	dialect, _, err := atlassource.PinDialect(c.Context(), "", urlname.Source{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dialect, qt.Equals, "")

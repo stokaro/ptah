@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -49,6 +50,10 @@ type InspectSourceOptions struct {
 	// dev database is reset destructively before the source is materialized
 	// on it.
 	DevURL string
+	// DevSource names DevURL in an error the way the operator gave it. The
+	// zero value is --dev-url; a native command that took the URL from its
+	// project file passes [urlname.ProjectDev].
+	DevSource urlname.Source
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
@@ -192,6 +197,12 @@ func (o InspectSourceOptions) sourceFlag() string {
 	return o.URLFlag
 }
 
+// urlNames names the inspected URL and the dev URL in an error, as
+// [InspectSourceOptions.sourceFlag] and [InspectSourceOptions.DevSource] do.
+func (o InspectSourceOptions) urlNames() urlname.Names {
+	return urlname.Names{Target: urlname.Flag(o.sourceFlag()), Dev: o.DevSource}
+}
+
 func ValidateNonDatabaseInspectPreconditions(ctx context.Context, opts InspectSourceOptions) error {
 	if err := ValidateInspectOptions(opts); err != nil {
 		return err
@@ -240,7 +251,7 @@ func refuseInspectDevURLForm(ctx context.Context, devURL string) error {
 	// No sets are passed: a caller reaching this has a source that is not a
 	// database URL, so it contributes no dialect, and this computes exactly the
 	// --dev-url half inspectOnDev computes from the same value.
-	if _, _, err := atlassource.PinDialect(ctx, devURL); err != nil {
+	if _, _, err := atlassource.PinDialect(ctx, devURL, urlname.Source{}); err != nil {
 		return err
 	}
 	if !devdocker.IsURL(devURL) {
@@ -278,6 +289,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	inspectOpts := InspectOptions{
 		Runtime:                  opts.Runtime,
 		DevURL:                   opts.DevURL,
+		Names:                    opts.urlNames(),
 		Schemas:                  opts.Schemas,
 		Include:                  opts.Include,
 		Exclude:                  opts.Exclude,
@@ -355,7 +367,7 @@ func inspectOnDev(
 	devURL := strings.TrimSpace(opts.DevURL)
 	// Pinned from the value as written: atlasurl trims any other URL itself,
 	// and reads a docker URL as written, as the provisioner does.
-	dialect, _, err := atlassource.PinDialect(ctx, opts.DevURL, set)
+	dialect, _, err := atlassource.PinDialect(ctx, opts.DevURL, opts.DevSource, set)
 	if err != nil {
 		return InspectResult{}, err
 	}
@@ -415,7 +427,7 @@ func inspectOnDev(
 	// user database, so the reset drops only what this run created.
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
-		return InspectResult{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return InspectResult{}, fmt.Errorf("connect to %s: %w", opts.urlNames().DevSource(), err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	devConn.SchemaWriter().SetDryRun(false)
@@ -537,7 +549,7 @@ func loadInspectDeclaration(
 		Runtime:                   opts.Runtime,
 		DatabaseURL:               devURL,
 		Dialect:                   dialect,
-		DialectFlag:               "--dev-url",
+		DialectSource:             opts.urlNames().DevSource(),
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,

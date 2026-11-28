@@ -9,13 +9,13 @@ package providerurl
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/urlname"
 )
 
 // Provided returns the target an executable provider serves for rawURL under
@@ -47,12 +47,12 @@ func Dialect(ctx context.Context, rawURL string) (string, error) {
 // ValidateDialectMatch is [atlasurl.ValidateDialectMatch] for a run that may
 // have selected an executable provider: a URL the provider serves names the
 // provider's target, and matches when that target is the target database's.
-func ValidateDialectMatch(ctx context.Context, rawURL, targetDialect string) error {
+func ValidateDialectMatch(ctx context.Context, rawURL, targetDialect string, names urlname.Names) error {
 	if target, served := Provided(ctx, rawURL); served {
 		if target != targetDialect {
-			return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", target, targetDialect)
+			return names.DialectMismatch(target, targetDialect)
 		}
 		return nil
 	}
-	return atlasurl.ValidateDialectMatch(rawURL, targetDialect)
+	return atlasurl.ValidateDialectMatch(rawURL, targetDialect, names)
 }

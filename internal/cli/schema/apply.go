@@ -708,6 +708,7 @@ func runSchemaApplyOnLockedSession(
 		Runtime:             opts.runtime,
 		ProjectRoots:        schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
+		Names:               dbcli.URLNames(cmd, applyDBURLFlag, applyDevURLFlag, opts.devURL),
 		DevServerDisposable: opts.devServerDisposable,
 		ToURLs:              opts.toURLs,
 		Desired:             desired,
@@ -781,6 +782,7 @@ func runSchemaApplyOnLockedSession(
 	// apply before the target is touched.
 	if err := plan.SimulateOnDev(ctx, atlasschema.SimulateOptions{
 		DevURL:              opts.devURL,
+		Names:               dbcli.URLNames(cmd, applyDBURLFlag, applyDevURLFlag, opts.devURL),
 		TargetURL:           opts.dbURL,
 		DesiredURLs:         opts.toURLs,
 		Statements:          statements,

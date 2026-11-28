@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/urlname"
 )
 
 // tableCount asks the held connection how many user tables its server holds,
@@ -34,7 +35,7 @@ func TestResolveHolding_DatabaseSourceHoldsItsConnection(t *testing.T) {
 	var heldTables int
 	var heldState atlassource.State
 
-	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite", DialectFlag: "--dev-url"},
+	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite", DialectSource: urlname.Flag("--dev-url")},
 		func(state atlassource.State, conn *dbschema.DatabaseConnection) error {
 			heldState = state
 			heldTables = tableCount(c, conn)
@@ -58,7 +59,7 @@ func TestResolveHolding_MigrationDirHoldsTheReplaySession(t *testing.T) {
 	var heldTables int
 
 	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect: "sqlite", DialectFlag: "--dev-url", DevURL: devURL,
+		Dialect: "sqlite", DialectSource: urlname.Flag("--dev-url"), DevURL: devURL,
 	}, func(_ atlassource.State, conn *dbschema.DatabaseConnection) error {
 		heldTables = tableCount(c, conn)
 		return nil
@@ -78,7 +79,7 @@ func TestResolveHolding_LocalFileHoldsNoConnection(t *testing.T) {
 	called := false
 	var heldConn *dbschema.DatabaseConnection
 
-	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite", DialectFlag: "--dev-url"},
+	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite", DialectSource: urlname.Flag("--dev-url")},
 		func(_ atlassource.State, conn *dbschema.DatabaseConnection) error {
 			called = true
 			heldConn = conn
@@ -103,7 +104,7 @@ func TestResolveHolding_FailurePath_HoldErrorComesBackUnwrapped(t *testing.T) {
 	set := classifySingle(t, "--from", "file://"+dir)
 
 	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect: "sqlite", DialectFlag: "--dev-url", DevURL: devURL,
+		Dialect: "sqlite", DialectSource: urlname.Flag("--dev-url"), DevURL: devURL,
 	}, func(atlassource.State, *dbschema.DatabaseConnection) error {
 		return errHeld
 	})
@@ -124,7 +125,7 @@ func TestResolveHolding_FailurePath_ValidationRunsBeforeTheHold(t *testing.T) {
 	called := false
 
 	err := set.ResolveHolding(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect: "sqlite", DialectFlag: "--dev-url",
+		Dialect: "sqlite", DialectSource: urlname.Flag("--dev-url"),
 		ValidateInspectedSchema: func(*schemamodel.Database) error { return errInvalid },
 	}, func(atlassource.State, *dbschema.DatabaseConnection) error {
 		called = true

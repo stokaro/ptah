@@ -69,7 +69,7 @@ func (p ApplyRuntimePlan) simulateNativeOnDev(ctx context.Context, opts Simulate
 	if !ok {
 		return errors.New("schema apply simulation of native operations requires their assessment")
 	}
-	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs, opts.Names)
 	if err != nil {
 		return err
 	}

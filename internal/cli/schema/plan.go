@@ -300,6 +300,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		Name:             opts.name,
 		DevURL:           opts.devURL,
 		SkipUnusedDevURL: !dbcli.ChecksUnusedDevURL(cmd, planDevURLFlag),
+		Names:            dbcli.URLNames(cmd, planDBURLFlag, planDevURLFlag, opts.devURL),
 		ConnectTimeout:   connectTimeout,
 		Desired:          desired,
 		Exclude:          opts.exclude,

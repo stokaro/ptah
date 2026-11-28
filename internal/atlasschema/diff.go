@@ -54,6 +54,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -258,12 +259,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Runtime:      opts.Runtime,
-		DatabaseURL:  sourceDatabaseURL(opts.DevURL, fromSet, toSet),
-		Dialect:      dialect,
-		DialectFlag:  prepared.dialectFlag,
-		DevURL:       opts.DevURL,
-		DevURLSource: opts.devURLSource(),
+		Runtime:       opts.Runtime,
+		DatabaseURL:   sourceDatabaseURL(opts.DevURL, fromSet, toSet),
+		Dialect:       dialect,
+		DialectSource: prepared.dialectSource,
+		DevURL:        opts.DevURL,
+		DevSource:     opts.devURLSource(),
 		// A database on either side is compared live with the dev database
 		// before the dev database is reset for the other side.
 		Protected:                append(fromSet.DevProtected(), toSet.DevProtected()...),
@@ -521,7 +522,7 @@ func documentServer(
 	asksDevServer := opts.ServerVersion == "" && documents
 	switch {
 	case documents && resolve != nil:
-		facts, err := devreach.ServerFacts(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, resolve)
+		facts, err := devreach.ServerFacts(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
 			return devreach.Facts{}, devAnswersNamesError(dialect, err)
 		}
@@ -534,7 +535,7 @@ func documentServer(
 		}
 		return facts, nil
 	case !opts.SkipUnusedDevURL && documents:
-		facts, err := devreach.ServerFacts(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, resolve)
+		facts, err := devreach.ServerFacts(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
 			return devreach.Facts{}, err
 		}
@@ -543,10 +544,10 @@ func documentServer(
 		}
 		return facts, nil
 	case !opts.SkipUnusedDevURL:
-		_, err := devreach.Server(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout)
+		_, err := devreach.Server(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout)
 		return devreach.Facts{}, err
 	case asksDevServer:
-		return devServerVersion(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, opts.Diagnostics, resolve), nil
+		return devServerVersion(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, opts.Diagnostics, resolve), nil
 	}
 	return devreach.Facts{}, nil
 }
@@ -555,11 +556,17 @@ func documentServer(
 // gave it: the dev database named in the project file where a native command
 // took it from there ([DiffOptions.SkipUnusedDevURL]), and --dev-url, the
 // flag or its variable, otherwise.
-func (opts DiffOptions) devURLSource() string {
+func (opts DiffOptions) devURLSource() urlname.Source {
 	if opts.SkipUnusedDevURL {
-		return "the dev database named in the project file"
+		return urlname.ProjectDev()
 	}
-	return "--dev-url"
+	return urlname.Flag("--dev-url")
+}
+
+// urlNames names the dev URL of a diff as [DiffOptions.devURLSource] does. A
+// diff has no target URL, so its target keeps the default name.
+func (opts DiffOptions) urlNames() urlname.Names {
+	return urlname.Names{Dev: opts.devURLSource()}
 }
 
 // devAnswersNamesError says that two documents planned for dialect are
@@ -585,7 +592,9 @@ func devAnswersNamesError(dialect string, err error) error {
 // given for the run.
 func devServerVersion(
 	ctx context.Context,
-	dialect, source, devURL string,
+	dialect string,
+	names urlname.Names,
+	devURL string,
 	timeout time.Duration,
 	diagnostics io.Writer,
 	resolve devreach.Resolve,
@@ -593,7 +602,7 @@ func devServerVersion(
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
-	facts, err := devreach.ServerFacts(ctx, dialect, source, devURL, timeout, resolve)
+	facts, err := devreach.ServerFacts(ctx, dialect, names, devURL, timeout, resolve)
 	if err != nil {
 		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
@@ -1544,10 +1553,10 @@ func resolveDiffSource(
 }
 
 type preparedDiffSources struct {
-	from        atlassource.Set
-	to          atlassource.Set
-	dialect     string
-	dialectFlag string
+	from          atlassource.Set
+	to            atlassource.Set
+	dialect       string
+	dialectSource urlname.Source
 }
 
 func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSources, error) {
@@ -1604,7 +1613,7 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 			return preparedDiffSources{}, fmt.Errorf("%s: %w", opts.devURLSource(), err)
 		}
 	}
-	dialect, dialectFlag, err := atlassource.PinDialect(ctx, opts.DevURL, fromSet, toSet)
+	dialect, dialectSource, err := atlassource.PinDialect(ctx, opts.DevURL, opts.devURLSource(), fromSet, toSet)
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
@@ -1612,10 +1621,10 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 		return preparedDiffSources{}, ErrDevURLRequired
 	}
 	return preparedDiffSources{
-		from:        fromSet,
-		to:          toSet,
-		dialect:     dialect,
-		dialectFlag: dialectFlag,
+		from:          fromSet,
+		to:            toSet,
+		dialect:       dialect,
+		dialectSource: dialectSource,
 	}, nil
 }
 
@@ -1673,7 +1682,7 @@ func preparedDiffSides(
 	sides devServerSides,
 	opts DiffOptions,
 ) (diffSides, error) {
-	from, to, err := scopedDiffSides(ctx, conn, opts.Runtime, from, to, dialect, sides, opts.devURLSource(), opts.DevURL)
+	from, to, err := scopedDiffSides(ctx, conn, opts.Runtime, from, to, dialect, sides, opts.devURLSource().String(), opts.DevURL)
 	if err != nil {
 		return diffSides{}, err
 	}
