@@ -95,3 +95,23 @@ func TestSchemaDiffSQLServerReadsTheSchemasItIsGivenE2E(t *testing.T) {
 	c.Assert(got.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
 	c.Assert(got.Stderr, qt.Not(qt.Contains), "Note:")
 }
+
+// TestSchemaDiffSQLServerSaysNothingOfADatabaseHoldingOnlyDboE2E diffs a
+// database holding dbo.d1 alone against a file declaring dbo.d1 and app.t1.
+// The database holds no schema the diff did not read, so the plan creates
+// app.t1 and the run writes no note about its scope.
+func TestSchemaDiffSQLServerSaysNothingOfADatabaseHoldingOnlyDboE2E(t *testing.T) {
+	c := qt.New(t)
+	dbURL := sqlServerRoleScratchDatabase(c)
+	_, err := connectDevDialect(c, dbURL).ExecContext(c.Context(), "CREATE TABLE dbo.d1 (id INT NOT NULL)")
+	c.Assert(err, qt.IsNil)
+	schema := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(schema, []byte("CREATE TABLE dbo.d1 (id INT NOT NULL);\nGO\nCREATE TABLE app.t1 (id INT NOT NULL);\nGO\n"), 0o600), qt.IsNil)
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: time.Minute},
+		"schema", "diff", "--from", dbURL, "--to", schema)
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE [app].[t1]")
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "Note:")
+}

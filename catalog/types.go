@@ -189,6 +189,16 @@ type Database struct {
 	// rendered. Only Roles reaches output.
 	RolesOutOfScope []Role `json:"-"`
 
+	// SchemasOutOfScope names the schemas the database holds beyond the ones
+	// this read covers, on a reader that lists them, sorted by name: a SQL
+	// Server read, whose scope is one schema, lists the user schemas of its
+	// database and dbo. Nil means the reader does not establish them, and an
+	// empty non-nil slice means it listed them and found none. A diff that
+	// read one schema reads it to say whether a schema it did not read exists.
+	// It is a fact about the read rather than part of the description, so it
+	// is never serialized.
+	SchemasOutOfScope []string `json:"-"`
+
 	// RolesOutOfScopeReason is why the reader left RolesOutOfScope out of the
 	// description, in that reader's words: a clause that completes
 	// "because", which names no role. It is empty where the reader states no

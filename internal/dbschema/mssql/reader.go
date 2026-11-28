@@ -99,6 +99,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, fmt.Errorf("sqlserver: read schemas: %w", err)
 	}
 	schema.Schemas = schemas
+	outside, err := r.readSchemasOutOfScope(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read schemas outside the read: %w", err)
+	}
+	schema.SchemasOutOfScope = outside
 
 	tables, err := r.readTables(ctx)
 	if err != nil {
@@ -245,6 +250,38 @@ func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 		return nil, err
 	}
 	return schemas, nil
+}
+
+// readSchemasOutOfScope reads the schemas the database holds beyond the read's
+// scope that can hold a user's objects, sorted by name, and an empty non-nil
+// slice where there are none: dbo, and every schema a user created. The other
+// schemas every database holds are left out: guest, INFORMATION_SCHEMA and
+// sys, and the schema of each fixed database role, whose ID is 16384 or more.
+func (r *Reader) readSchemasOutOfScope(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT s.name
+		FROM sys.schemas AS s
+		WHERE (s.schema_id = 1 OR s.schema_id BETWEEN 5 AND 16383)
+		  AND NOT (` + schemaPredicatePlaceholder + `)
+		ORDER BY s.name`
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
