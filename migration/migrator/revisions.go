@@ -695,8 +695,8 @@ ORDER BY version`,
 
 func (m *Migrator) beginMigrationSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`INSERT INTO %s (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
+		return fmt.Sprintf(`INSERT INTO %s (%s)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable(), strings.Join(atlasRevisionColumns, ", "))
 	}
 	return fmt.Sprintf(`INSERT INTO %s (version, description, applied_at, state, applied, total, error, error_stmt, execution_time_ms, checksum)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.qualifiedMigrationsTable())
@@ -798,9 +798,9 @@ func (m *Migrator) forceAppliedMigrationSQL() string {
 		verb = "UPSERT"
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`%s INTO %s (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
+		return fmt.Sprintf(`%s INTO %s (%s)
 VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)
-%s`, verb, m.qualifiedMigrationsTable(), m.forceAppliedConflictClause())
+%s`, verb, m.qualifiedMigrationsTable(), strings.Join(atlasRevisionColumns, ", "), m.forceAppliedConflictClause())
 	}
 	return fmt.Sprintf(`%s INTO %s (version, description, applied_at, state, applied, total, error, error_stmt, execution_time_ms, checksum)
 VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
@@ -821,8 +821,8 @@ func (m *Migrator) forceAppliedReplacesRow() bool {
 }
 
 func (m *Migrator) insertAtlasRevisionSQL() string {
-	return fmt.Sprintf(`INSERT INTO %s (version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)`, m.qualifiedMigrationsTable())
+	return fmt.Sprintf(`INSERT INTO %s (%s)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)`, m.qualifiedMigrationsTable(), strings.Join(atlasRevisionColumns, ", "))
 }
 
 func (m *Migrator) forceAppliedPtahUpdateSQL() string {

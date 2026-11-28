@@ -99,7 +99,7 @@ func clickHouse() descriptor.Dialect {
 			AlterTableUpdate: true,
 		},
 		Seeds: descriptor.Seeds{
-			Tracker: `CREATE TABLE IF NOT EXISTS schema_seeds (
+			Tracker: `CREATE TABLE IF NOT EXISTS ` + descriptor.TrackerTable + ` (
     seed_path String,
     env String,
     checksum String,

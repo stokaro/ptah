@@ -52,6 +52,17 @@ type ManagedData struct {
 	TypedRows bool `json:"typed_rows,omitempty"`
 }
 
+// TrackerTable and TrackerTableText are the placeholders a [Seeds.Tracker]
+// statement writes for the tracker table's name. The seeder replaces
+// TrackerTable with the name as an identifier and TrackerTableText with the
+// same name as the body of a string literal, its single quotes doubled. The
+// name is schema_seeds, qualified by the schema the connection keeps Ptah's
+// tables in where the connection names one (catalog.ServerInfo.MetadataSchema).
+const (
+	TrackerTable     = "{{table}}"
+	TrackerTableText = "{{table_text}}"
+)
+
 // IdentityInsert names the identity columns that refuse an explicit value.
 type IdentityInsert string
 
@@ -69,7 +80,9 @@ const (
 type Seeds struct {
 	// Tracker is the statement that creates the tracker table when it is
 	// absent. It runs on every seed run, so it succeeds against a table that
-	// exists. Empty takes the portable CREATE TABLE IF NOT EXISTS.
+	// exists. It writes [TrackerTable] where it names the table as an
+	// identifier and [TrackerTableText] where it names the table inside a
+	// string literal. Empty takes the portable CREATE TABLE IF NOT EXISTS.
 	Tracker string `json:"tracker,omitempty"`
 	// Transactional runs each seed file in one transaction with the row that
 	// records it. Without it the statements run one by one, and an

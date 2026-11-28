@@ -6,8 +6,8 @@ import (
 )
 
 // refuseStrandedConnectionHistory refuses a run that would read an empty
-// revision table in the connection's metadata schema while a table of that
-// name stands in the schema the connection works in.
+// revision table in the connection's metadata schema while a revision history
+// of this run's layout stands in the schema the connection works in.
 //
 // A SQL Server connection keeps Ptah's tables in the schema the URL's schema
 // parameter names, or else in dbo ([catalog.ServerInfo.MetadataSchema]), and
@@ -17,6 +17,11 @@ import (
 // apply the whole directory again. Naming the schema, or
 // moving the tables, is the operator's choice, so this refuses rather than
 // picking one.
+//
+// A table of the history's name without the layout's columns
+// ([RevisionTableFormat.layoutColumns]) belongs to another tool, such as
+// golang-migrate's schema_migrations. It holds no history this run could lose,
+// so the run starts its own history in the metadata schema.
 //
 // Only a schema the caller did not name is checked. A schema the caller named
 // is the answer to this question already. Initialize runs on the caller's
@@ -37,7 +42,7 @@ func (m *Migrator) refuseStrandedConnectionHistory(ctx context.Context) error {
 	if inKept {
 		return nil
 	}
-	inConnected, err := m.tableExistsIn(ctx, connected, table)
+	inConnected, err := m.revisionHistoryIn(ctx, connected, table)
 	if err != nil {
 		return fmt.Errorf("failed to look for the revision table in %q: %w", connected, err)
 	}
@@ -47,9 +52,29 @@ func (m *Migrator) refuseStrandedConnectionHistory(ctx context.Context) error {
 	return fmt.Errorf(
 		"found revision table %q in schema %q, the default schema of the connection's user, and none in schema %q, "+
 			"where this run keeps and reads it: pass --migrations-schema %s (--revisions-schema %s in ptah-compat), "+
-			"or add schema=%s to the URL, to keep using the table where it is, or move the migration tables into schema %q",
-		table, connected, kept, connected, connected, connected, kept,
+			"or add schema=%s to the URL, to keep using the table where it is; move the migration tables into schema %q; "+
+			"or pass --migrations-schema %s (--revisions-schema %s in ptah-compat) to start a new history in schema %q",
+		table, connected, kept, connected, connected, connected, kept, kept, kept, kept,
 	)
+}
+
+// revisionHistoryIn reports whether schema holds a table named table with the
+// columns of this run's layout, asking the engine's catalog rather than the
+// table, which may belong to another tool.
+func (m *Migrator) revisionHistoryIn(ctx context.Context, schema, table string) (bool, error) {
+	exists, err := m.tableExistsIn(ctx, schema, table)
+	if err != nil || !exists {
+		return false, err
+	}
+	described := m.metadataTable(table)
+	described.ConfiguredSchema = schema
+	for _, column := range m.revisionTableFormat.layoutColumns() {
+		held, err := m.columnExistsIn(ctx, described, column)
+		if err != nil || !held {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // metadataSchemaApart reports the schema a run keeps its history in and the

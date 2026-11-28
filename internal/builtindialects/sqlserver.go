@@ -106,9 +106,9 @@ func sqlServer() descriptor.Dialect {
 			IdentityRefusesInsert: descriptor.IdentityInsertAutoIncrement,
 		},
 		Seeds: descriptor.Seeds{
-			Tracker: `IF OBJECT_ID(N'schema_seeds', N'U') IS NULL
+			Tracker: `IF OBJECT_ID(N'` + descriptor.TrackerTableText + `', N'U') IS NULL
 BEGIN
-    CREATE TABLE schema_seeds (
+    CREATE TABLE ` + descriptor.TrackerTable + ` (
         seed_path VARCHAR(512) PRIMARY KEY,
         env VARCHAR(128) NOT NULL,
         checksum CHAR(64) NOT NULL,

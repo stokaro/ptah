@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,14 +20,17 @@ import (
 // A run that names no schema keeps the history in dbo. A history an account
 // kept in its own default schema, through --migrations-schema or a URL that
 // named the schema, is out of sight there, and reading the empty dbo would
-// apply every migration again. So the run refuses and names both schemas.
+// apply every migration again. So the run refuses and names both schemas. A
+// table of the history's name that another tool keeps there holds no history,
+// and the run starts its own in dbo.
 
 // sqlServerStrandedHistory is the refusal for an account whose default schema
 // is app, after the table name.
 const sqlServerStrandedHistory = `in schema "app", the default schema of the connection's user, and none in ` +
 	`schema "dbo", where this run keeps and reads it: pass --migrations-schema app (--revisions-schema app in ` +
-	`ptah-compat), or add schema=app to the URL, to keep using the table where it is, or move the migration ` +
-	`tables into schema "dbo"`
+	`ptah-compat), or add schema=app to the URL, to keep using the table where it is; move the migration ` +
+	`tables into schema "dbo"; or pass --migrations-schema dbo (--revisions-schema dbo in ptah-compat) to start ` +
+	`a new history in schema "dbo"`
 
 // sqlServerAppMigrations creates a table in app once and inserts one row into
 // it, so a run that applies them again leaves an extra row.
@@ -159,6 +163,92 @@ func TestMigrationsStatusSQLServerPrintsTheSchemaItReadsE2E(t *testing.T) {
 	c.Assert(asSA.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", asSA.Stdout, asSA.Stderr))
 	c.Assert(status.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", status.Stdout, status.Stderr))
 	c.Assert(status.Stdout, qt.Contains, "Schema: dbo\n\nCurrent Version: 2\n")
+}
+
+// TestMigrationsSQLServerStartAHistoryBesideAnotherToolsTableE2E runs, as an
+// account whose default schema is app, beside a table in app that another tool
+// keeps under the history's name: golang-migrate's schema_migrations for ptah,
+// and a table of one column for ptah-compat. Neither holds a history, so each
+// run creates its own in dbo and applies the migrations once, and the other
+// tool's table stays as it was.
+func TestMigrationsSQLServerStartAHistoryBesideAnotherToolsTableE2E(t *testing.T) {
+	tests := []struct {
+		name    string
+		foreign string
+		target  clirun.Target
+		args    []string
+		tables  string
+	}{
+		{
+			name:    "ptah beside golang-migrate's table",
+			foreign: "CREATE TABLE app.schema_migrations (version BIGINT PRIMARY KEY, dirty BIT NOT NULL)",
+			target:  clirun.Ptah,
+			args:    []string{"migrations", "up", "--migrations-dir", "{dir}", "--db-url", "{account}"},
+			tables:  "app.schema_migrations,dbo.schema_migrations,dbo.schema_migrations_log",
+		},
+		{
+			name:    "ptah-compat beside a table of one column",
+			foreign: "CREATE TABLE app.atlas_schema_revisions (id INT NOT NULL)",
+			target:  clirun.Compat,
+			args:    []string{"migrate", "apply", "--dir", "{dirURL}", "--url", "{account}"},
+			tables:  "app.atlas_schema_revisions,dbo.atlas_schema_revisions",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbURL := sqlServerRoleScratchDatabase(c)
+			account := sqlServerAccount(c, dbURL, "app")
+			_, err := connectDevDialect(c, dbURL).ExecContext(c.Context(), test.foreign)
+			c.Assert(err, qt.IsNil)
+			dir := c.TempDir()
+			writeFiles(c, dir, sqlServerAppMigrations)
+			atlasDir := c.TempDir()
+			writeFiles(c, atlasDir, map[string]string{
+				"20260101000001_create.sql": sqlServerAppMigrations["1_create.up.sql"],
+				"20260101000002_seed.sql":   sqlServerAppMigrations["2_seed.up.sql"],
+			})
+			dirURL := "file://" + filepath.ToSlash(atlasDir)
+			hashed := clirun.Run(c, clirun.Compat, clirun.Options{Timeout: time.Minute}, "migrate", "hash", "--dir", dirURL)
+			c.Assert(hashed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", hashed.Stdout, hashed.Stderr))
+			args := make([]string, 0, len(test.args))
+			for _, arg := range test.args {
+				args = append(args, strings.NewReplacer("{dir}", dir, "{dirURL}", dirURL, "{account}", account).Replace(arg))
+			}
+
+			got := clirun.Run(c, test.target, clirun.Options{Timeout: time.Minute}, args...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(heldColumns(c, dbURL, sqlServerAppRows), qt.Equals, "1")
+			c.Assert(heldColumns(c, dbURL, sqlServerOwnTables), qt.Equals, test.tables)
+		})
+	}
+}
+
+// TestMigrationsSQLServerReadTheHistoryInDboBesideOneInAppE2E keeps a history
+// in app, through --migrations-schema, and one in dbo, as sa: the second run
+// applies the insert again, so app.acct holds two rows. The account then runs
+// up without a schema. dbo holds a history, so the run reads it, finds every
+// migration applied, and applies nothing.
+func TestMigrationsSQLServerReadTheHistoryInDboBesideOneInAppE2E(t *testing.T) {
+	c := qt.New(t)
+	dbURL := sqlServerRoleScratchDatabase(c)
+	account := sqlServerAccount(c, dbURL, "app")
+	dir := c.TempDir()
+	writeFiles(c, dir, sqlServerAppMigrations)
+	run := func(args ...string) clirun.Result {
+		return clirun.Run(c, clirun.Ptah, clirun.Options{Timeout: time.Minute}, args...)
+	}
+
+	inApp := run("migrations", "up", "--db-url", account, "--migrations-dir", dir, "--migrations-schema", "app")
+	inDbo := run("migrations", "up", "--db-url", dbURL, "--migrations-dir", dir)
+	unnamed := run("migrations", "up", "--db-url", account, "--migrations-dir", dir)
+
+	c.Assert(inApp.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", inApp.Stdout, inApp.Stderr))
+	c.Assert(inDbo.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", inDbo.Stdout, inDbo.Stderr))
+	c.Assert(unnamed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", unnamed.Stdout, unnamed.Stderr))
+	c.Assert(unnamed.Stdout, qt.Contains, "Database is already up to date!")
+	c.Assert(heldColumns(c, dbURL, sqlServerAppRows), qt.Equals, "2")
 }
 
 // sqlServerLimitedAccount creates a user whose default schema is schema, who
