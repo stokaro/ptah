@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/portablegrants"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaremoval"
@@ -564,7 +565,10 @@ func readExcludedPlanStates(
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
 	atlasfilter.ReportUnmatched(opts.Diagnostics, opts.ExcludeSources, desiredReport, observedReport)
-	return desired, dbSchema, nil
+	// The database read is a dev database, and the migration is applied to
+	// another one: a REVOKE rendered from a grant as read would name the dev
+	// database, which the database the file is applied to does not hold.
+	return desired, portablegrants.Relative(dbSchema), nil
 }
 
 // readPlanTarget reads the database a migration is planned against, at the

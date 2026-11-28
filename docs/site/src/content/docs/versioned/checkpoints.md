@@ -57,11 +57,16 @@ ptah migrations checkpoint --migrations-dir ./migrations \
   --shadow-db "sqlite://$(mktemp -u).db" --dry-run
 ```
 
-On MySQL and MariaDB, a read of the shadow database names the table of each
-grant with the shadow database's name. The checkpoint writes the table or the
-column alone, as it writes the tables themselves, so it replays into a database
-of any name. A grant on the database itself still names the shadow database
-(stokaro/ptah#6844).
+On MySQL and MariaDB, a read of the shadow database names the object of each
+grant with the shadow database's name. The checkpoint writes the table, the
+column or the routine alone, as it writes the tables themselves, and a grant on
+the database itself as `GRANT ... ON *`, which names the database the replay
+selects. So it replays into a database of any name. A role's `EXECUTE` and
+`ALTER ROUTINE` on a function or a procedure are carried as
+``GRANT EXECUTE ON FUNCTION `f1` TO `r` ``. A grant the read does not describe
+is not carried: a grant to a login rather than a role, a grant on every database
+(`ON *.*`) or on a database name pattern, and MariaDB's `SHOW CREATE ROUTINE` on
+a routine, which the server does not record in `mysql.procs_priv`.
 
 | Flag | Purpose |
 | --- | --- |
@@ -141,6 +146,12 @@ body drops it in reverse. The marker is recognized by discovery and parsing
 without changing how ordinary `up`/`down` files are read, so a checkpoint and
 the historical migrations it squashes coexist in one directory.
 
+On MySQL and MariaDB, `ptah migrations up` refuses a view, trigger, routine or
+event definition in its default transaction mode, `file`. A checkpoint whose up
+body holds one begins both bodies with `-- +ptah no_transaction`, so it applies
+without `--tx-mode none`. DDL commits on its own there, so the file gives up
+nothing a transaction would have kept.
+
 `--dir-format atlas` writes the Atlas convention instead: a single up-only file
 named `<version>_<description>.sql` whose **first line** is the
 `-- atlas:checkpoint` directive, with `atlas.sum` refreshed rather than
@@ -149,8 +160,10 @@ it, raised to one above the newest migration in the directory whenever that is
 higher. Subdirectories count: the replay and the reader both descend into them,
 so a nested migration dated after the timestamp would otherwise sort *after* a
 checkpoint whose body already contains its SQL, and a fresh database would run
-both. There is no down body — the Atlas format is up-only, so an Atlas-format
-checkpoint is not reversible. See
+both. A checkpoint the migrator would refuse in transaction mode `file` carries
+`-- atlas:txmode none` on the line after the checkpoint directive. There is no
+down body — the Atlas format is up-only, so an Atlas-format checkpoint is not
+reversible. See
 [Atlas-compatible surface](#atlas-compatible-surface) below.
 
 ## How a checkpoint applies

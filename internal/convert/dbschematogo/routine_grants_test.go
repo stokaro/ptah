@@ -84,3 +84,19 @@ func TestConvertDBSchemaToGoSchema_RoutineGrants(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertDBSchemaToGoSchema_MySQLRoutineGrants pins that a MySQL read of a
+// role's EXECUTE on a function is described as that grant and revokes nothing
+// from PUBLIC: MySQL gives PUBLIC no privilege on a routine, and MySQL answers
+// `REVOKE EXECUTE ON FUNCTION f1 FROM PUBLIC` with ERROR 1403.
+func TestConvertDBSchemaToGoSchema_MySQLRoutineGrants(t *testing.T) {
+	c := qt.New(t)
+	rows := []catalog.Grant{{Role: "app", Privilege: "EXECUTE", ObjectType: "FUNCTION", Schema: "shop", ObjectName: "f1"}}
+
+	db := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), &catalog.Database{Grants: rows}, platform.MySQL, must.Must(builtin.New())))
+
+	c.Assert(db.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{Role: "app", Privileges: []string{"EXECUTE"}, OnRoutine: "shop.f1", RoutineKind: "FUNCTION"},
+	})
+	c.Assert(db.RevokedGrants, qt.HasLen, 0)
+}

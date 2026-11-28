@@ -124,7 +124,9 @@ function "rf" {
 				"--to-version", "1700000000")
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", initialized))
 			routines, privileges := heldRoutines(c, db), routinePrivilegesIn(c, db, schema)
-			read, err := runPtahNativeWithError("schema", "inspect", "--db-url", url)
+			// The user is a login, so the read reports its routine grants and
+			// inspect notes on stderr that it leaves them out.
+			read, err := runPtahNativeStdout("schema", "inspect", "--db-url", url)
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", read))
 			before := filepath.Join(c.TempDir(), "before.hcl")
 			c.Assert(os.WriteFile(before, []byte(read), 0o600), qt.IsNil)

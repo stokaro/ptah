@@ -25,8 +25,10 @@ import (
 const grantObjectTypeSchema = "SCHEMA"
 
 // grantObjectTypeDatabase is the object type whose target is the database
-// itself, YDB's database root, which has no name a comparison could tell
-// apart: it is the database being compared.
+// itself, YDB's database root or the MySQL family's `*`, which has no name a
+// comparison could tell apart: it is the database being compared. Where the
+// read names that database, it is keyed as the schema of that name; see
+// [columnSequences.comparedKey].
 const grantObjectTypeDatabase = "DATABASE"
 
 // Grants compares PostgreSQL role privilege grants using the identifier rules
@@ -159,6 +161,17 @@ type GrantOptions struct {
 	// the roles whose grants keep a privilege a revoke on a table names; see
 	// [ptah.run/internal/membershipplan.Read]. The zero value plans none.
 	Memberships membershipplan.Declared
+	// RoutineNamesFold says the target compares a routine name without case,
+	// so a grant on a routine names it as the database spells it; see
+	// [ptah.run/core/platform/descriptor.Comparison.RoutineNamesFold].
+	RoutineNamesFold bool
+	// RoutineKindsApart says the target holds a function and a procedure
+	// under one name as two routines, as the MySQL family does, so a grant on
+	// one is not a grant on the other; see
+	// [ptah.run/core/platform/descriptor.StatementGrammar.RoutineGrantsByName].
+	// Otherwise FUNCTION, PROCEDURE and ROUTINE name the same routine, as on
+	// PostgreSQL, where the kinds share one namespace.
+	RoutineKindsApart bool
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -170,6 +183,9 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	if options.RoutineNamesFold {
+		desired = routineGrantsSpelledAsRead(desired, database, semantics)
+	}
 	lists := newAllPrivilegeLists(options.AllPrivileges, database, semantics)
 	// target is how the server compares names. A declared revoke is matched by
 	// it, because it asserts the privilege absent under every spelling the
@@ -187,6 +203,7 @@ func GrantsWithOptions(
 	diff.ConnectedRole = database.ConnectedRole
 	diff.ConnectedRoleSuperuser = database.ConnectedRoleSuperuser
 	sequences := newColumnSequences(desired, database, semantics)
+	sequences.routineKindsApart = options.RoutineKindsApart
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
 	for _, grant := range desired.Grants {
@@ -239,7 +256,7 @@ func GrantsWithOptions(
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
 		}
 	}
-	revokeUnmatchedDeclarations(desired, database, databaseGrantMapForRemovals, lists,
+	revokeUnmatchedDeclarations(desired, database, databaseGrantMapForRemovals, lists, sequences,
 		createdGrants{
 			tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target,
 			memberships: options.Memberships, semantics: target,
@@ -823,10 +840,14 @@ func newAllPrivilegeLists(target descriptor.AllPrivileges, database *catalog.Dat
 //
 // A name the routines hold is a routine's and nothing else's, because SQL
 // Server and Oracle keep tables, views, sequences and routines in one
-// namespace per schema.
+// namespace per schema. A grant on a routine of a target that keeps the kinds
+// apart takes the list of its kind, as the MySQL family lists one per kind.
 func (al allPrivilegeLists) kind(key grantIdentity) string {
 	if kind, found := al.routines[key.object]; found {
 		return kind
+	}
+	if key.routineKind != "" {
+		return key.routineKind
 	}
 	return key.objectType
 }
@@ -1007,6 +1028,7 @@ func revokeUnmatchedDeclarations(
 	database *catalog.Database,
 	planned map[grantIdentity]difftypes.GrantRef,
 	lists allPrivilegeLists,
+	sequences columnSequences,
 	created createdGrants,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
@@ -1019,7 +1041,11 @@ func revokeUnmatchedDeclarations(
 	revoked := make(map[target][]difftypes.GrantRef)
 	for _, grant := range desired.RevokedGrants {
 		for _, ref := range grantRefsFromGenerated(grant) {
-			if removalCovers(planned, newGrantIdentity(ref, semantics)) {
+			// planned is keyed as the target compares a grant, so the revoke
+			// is too: on PostgreSQL a revoke on FUNCTION f is the removal of
+			// the read grant on the routine f, and without the same key the
+			// plan revokes it twice.
+			if removalCovers(planned, sequences.comparedKey(newGrantIdentity(ref, semantics))) {
 				continue
 			}
 			if database.NotDescribed.Describes(coverage.Role, ref.Role) &&
@@ -1276,6 +1302,12 @@ type grantIdentity struct {
 	objectType string
 	object     tableIdentity
 	arguments  string
+	// routineKind is FUNCTION or PROCEDURE where the target keeps a function
+	// and a procedure of one name apart, and empty otherwise; see
+	// [GrantOptions.RoutineKindsApart]. [newGrantIdentity] fills it for every
+	// routine, and [columnSequences.comparedKey] clears it where the kinds
+	// share a name.
+	routineKind string
 	// column is the column a table privilege is limited to, empty for the
 	// whole object. A column privilege and the table privilege of the same
 	// name are two rows in the catalog, so they are two identities. It is
@@ -1296,23 +1328,25 @@ func (key grantIdentity) onWholeObject() grantIdentity {
 func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) grantIdentity {
 	objectType := strings.ToUpper(strings.TrimSpace(ref.ObjectType))
 	object := newQualifiedTableIdentity(ref.ObjectName, semantics)
-	arguments := ""
+	arguments, routineKind := "", ""
 	switch {
 	case objectType == grantObjectTypeSchema:
 		// A schema grant names a schema, not a table in one, so the schema
 		// component carries the name and the table component stays empty.
 		object = objectidentity.NewBuilder(semantics).TableParts(ref.ObjectName, "").Key()
 	case grantRoutineKinds[objectType]:
+		routineKind = objectType
 		objectType = "ROUTINE"
 		arguments = routineargs.InputTypes(ref.Arguments)
 	}
 	return grantIdentity{
-		role:       roleKey(ref.Role, semantics),
-		privilege:  strings.ToUpper(strings.TrimSpace(ref.Privilege)),
-		objectType: objectType,
-		object:     object,
-		arguments:  arguments,
-		column:     semantics.ColumnIdentityKey(strings.TrimSpace(ref.Column)),
+		role:        roleKey(ref.Role, semantics),
+		privilege:   strings.ToUpper(strings.TrimSpace(ref.Privilege)),
+		objectType:  objectType,
+		object:      object,
+		arguments:   arguments,
+		routineKind: routineKind,
+		column:      semantics.ColumnIdentityKey(strings.TrimSpace(ref.Column)),
 	}
 }
 

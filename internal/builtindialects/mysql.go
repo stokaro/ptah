@@ -574,10 +574,13 @@ var mysqlCheckNameFolds = []descriptor.CodePointRange{
 }
 
 // mysqlStatementGrammar is how MySQL spells the statements a schema file
-// holds: USE selects the database, CREATE ROLE takes IF NOT EXISTS, and a
-// grant names a database as `db`.*.
+// holds: USE selects the database, CREATE ROLE takes IF NOT EXISTS, a grant
+// names a database as `db`.* and the selected one as *, and a grant names a
+// routine by its name alone.
 func mysqlStatementGrammar() descriptor.StatementGrammar {
-	return descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true, DatabaseWildcards: true}
+	return descriptor.StatementGrammar{
+		UseSelectsDatabase: true, RoleIfNotExists: true, DatabaseWildcards: true, RoutineGrantsByName: true,
+	}
 }
 
 // mysqlMultiWordPrivileges are the privileges of more than one word MySQL
@@ -587,18 +590,28 @@ func mysqlMultiWordPrivileges() []string {
 	return []string{"ALTER ROUTINE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "CREATE VIEW", "LOCK TABLES", "SHOW VIEW"}
 }
 
-// mysqlAllPrivileges is what GRANT ALL grants on a MySQL table and database,
-// as information_schema.TABLE_PRIVILEGES and SCHEMA_PRIVILEGES report it.
-// MariaDB grants these and more, so its descriptor starts from them.
+// mysqlAllPrivileges is what GRANT ALL grants on a MySQL table, database and
+// routine, as information_schema.TABLE_PRIVILEGES and SCHEMA_PRIVILEGES and
+// mysql.procs_priv report it. A grant ON * is on the database the session
+// selected, so it takes the database's list. MariaDB grants these and more,
+// so its descriptor starts from them.
+//
+// GRANT ALL ON FUNCTION f writes Execute and Alter Routine to
+// mysql.procs_priv, measured on MySQL 26.10.0 and MariaDB 12.3.3.
 func mysqlAllPrivileges() descriptor.AllPrivileges {
 	table := []string{
 		"ALTER", "CREATE", "CREATE VIEW", "DELETE", "DROP", "INDEX",
 		"INSERT", "REFERENCES", "SELECT", "SHOW VIEW", "TRIGGER", "UPDATE",
 	}
+	database := append(append([]string(nil), table...),
+		"ALTER ROUTINE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "EVENT", "EXECUTE", "LOCK TABLES")
+	routine := []string{"ALTER ROUTINE", "EXECUTE"}
 	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
-		"TABLE": {Privileges: table},
-		"SCHEMA": {Privileges: append(append([]string(nil), table...),
-			"ALTER ROUTINE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "EVENT", "EXECUTE", "LOCK TABLES")},
+		"TABLE":     {Privileges: table},
+		"SCHEMA":    {Privileges: database},
+		"DATABASE":  {Privileges: append([]string(nil), database...)},
+		"FUNCTION":  {Privileges: routine},
+		"PROCEDURE": {Privileges: append([]string(nil), routine...)},
 	}}
 }
 

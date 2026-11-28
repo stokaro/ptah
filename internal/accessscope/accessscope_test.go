@@ -35,6 +35,8 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 		{name: "MySQL and ClickHouse take the admin option", dialect: "mysql", caps: capability.MySQL84(),
 			database: &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", MemberOf: []string{"readers"},
 				MemberOptions: map[string]schemamodel.RoleMembershipOptions{"readers": {Admin: new(true)}}}}}},
+		{name: "MySQL takes a revoke on the database, GRANT ... ON *", dialect: "mysql", caps: capability.MySQL84(),
+			database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnDatabase: true}}}},
 	}
 
 	for _, test := range tests {
@@ -82,7 +84,7 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 				MemberOptions: map[string]schemamodel.RoleMembershipOptions{"readers": {Set: new(false)}}}}},
 			wantKey: capability.RoleMembershipInheritSet,
 			wantErr: `the schema states the inherit or set option of its membership in a role: member "app", which requires target capability role_membership_inherit_set, .*`},
-		{name: "a revoke on the database on MySQL", dialect: "mysql", caps: capability.MySQL84(),
+		{name: "a revoke on the database on SQL Server", dialect: "sqlserver", caps: capability.SQLServer2022(),
 			database: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnDatabase: true}}},
 			wantKey:  capability.DatabaseGrants,
 			wantErr:  `the schema grants or revokes a privilege on the database to "app", which requires target capability database_grants, .*`},

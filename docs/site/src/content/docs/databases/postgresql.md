@@ -2810,8 +2810,8 @@ names the form:
   of a table's `ALL` depend on the server version. Name the privileges in the
   `GRANT` instead.
 
-A privilege on a function or procedure is modeled for PostgreSQL only; the
-other renderers refuse the statement by name. Column privileges are modeled for
+A privilege on a function or procedure is modeled for PostgreSQL, MySQL and
+MariaDB; the other renderers refuse the statement by name. Column privileges are modeled for
 PostgreSQL, MySQL, MariaDB and SQL Server; the other renderers refuse them by
 name too.
 

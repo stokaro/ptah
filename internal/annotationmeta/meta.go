@@ -792,10 +792,13 @@ var directives = []Directive{
 			attr("on_table", "Target table.", valueString, false, false),
 			attr("on_schema", "Target schema.", valueString, false, false),
 			attr("on_sequence", "Target sequence.", valueString, false, false),
-			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, true),
-			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+			attr("on_database", "Targets the database itself: on MySQL and MariaDB the database the session "+
+				"selects, as GRANT ... ON * names it. YDB, MySQL and MariaDB.", valueBoolean, false, true),
+			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL, MySQL and "+
+				"MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in purge().",
 				valueString, false, false),
-			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL, MySQL and "+
+				"MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in archive().",
 				valueString, false, false),
 		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
@@ -818,10 +821,13 @@ var directives = []Directive{
 			attr("on_table", "Target table.", valueString, false, false),
 			attr("on_schema", "Target schema.", valueString, false, false),
 			attr("on_sequence", "Target sequence.", valueString, false, false),
-			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, true),
-			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+			attr("on_database", "Targets the database itself: on MySQL and MariaDB the database the session "+
+				"selects, as GRANT ... ON * names it. YDB, MySQL and MariaDB.", valueBoolean, false, true),
+			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL, MySQL and "+
+				"MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in purge().",
 				valueString, false, false),
-			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL, MySQL and "+
+				"MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in archive().",
 				valueString, false, false),
 		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+

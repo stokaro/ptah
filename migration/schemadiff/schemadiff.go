@@ -291,6 +291,8 @@ func compareReportingUndecidedAdditions(
 		TableRevokesTakeOnlyTableGrants: platform.TableRevokeTakesOnlyTableGrants(opts.Dialect),
 		AllPrivileges:                   targetAllPrivileges(opts.Dialect),
 		Memberships:                     membershipplan.Read(desired, identifierSemantics, caps),
+		RoutineNamesFold:                routineNamesFold(opts.Dialect),
+		RoutineKindsApart:               routineKindsApart(opts.Dialect),
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
@@ -763,6 +765,21 @@ type selectionRuntime interface {
 func targetAllPrivileges(dialect string) descriptor.AllPrivileges {
 	target, _ := platform.Lookup(dialect)
 	return target.AllPrivileges
+}
+
+// routineNamesFold reports whether dialect compares a routine name without
+// case; see [descriptor.Comparison.RoutineNamesFold].
+func routineNamesFold(dialect string) bool {
+	target, _ := platform.Lookup(dialect)
+	return target.Comparison.RoutineNamesFold
+}
+
+// routineKindsApart reports whether dialect holds a function and a procedure
+// of one name as two routines, which its grants name by kind and name alone;
+// see [descriptor.StatementGrammar.RoutineGrantsByName].
+func routineKindsApart(dialect string) bool {
+	target, _ := platform.Lookup(dialect)
+	return target.Grammar.Statements.RoutineGrantsByName
 }
 
 // grantObjectNames reads the owner's object a grant names through the

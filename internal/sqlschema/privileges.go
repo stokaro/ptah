@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
@@ -14,16 +15,23 @@ import (
 )
 
 // expandGrantedAll replaces ALL in a GRANT with the privileges it names on a
-// routine, which is EXECUTE on every server. A table's ALL depends on the
-// server version, so a GRANT ALL on any other kind keeps the spelling.
-func expandGrantedAll(privileges []string, objectType string) []string {
-	if !routineObjectTypes[strings.ToUpper(objectType)] {
+// routine, which is the same on every release of a server: EXECUTE on
+// PostgreSQL, and EXECUTE and ALTER ROUTINE on the MySQL family, as the
+// source platform's descriptor lists it. A table's ALL depends on the server
+// version, so a GRANT ALL on any other kind keeps the spelling.
+func expandGrantedAll(privileges []string, objectType, sourcePlatform string) []string {
+	kind := strings.ToUpper(objectType)
+	if !routineObjectTypes[kind] {
 		return privileges
+	}
+	all := pgprivilege.All(objectType)
+	if described, found := platform.Lookup(sourcePlatform); found && described.AllPrivileges.All(kind) != nil {
+		all = described.AllPrivileges.All(kind)
 	}
 	expanded := make([]string, 0, len(privileges))
 	for _, privilege := range privileges {
 		if strings.EqualFold(privilege, allPrivileges) {
-			expanded = append(expanded, pgprivilege.All(objectType)...)
+			expanded = append(expanded, all...)
 			continue
 		}
 		expanded = append(expanded, privilege)
@@ -90,6 +98,10 @@ func normalizeGrantee(sourcePlatform, role string) (string, error) {
 // name, which GRANT and REVOKE share.
 func setGrantTarget(grant *schemamodel.Grant, objectType, objectName, arguments, sourcePlatform string) {
 	switch kind := strings.ToUpper(objectType); {
+	case kind == "DATABASE":
+		// The MySQL family's GRANT ... ON *: the database the session
+		// selected, which is the database the schema is applied to.
+		grant.OnDatabase = true
 	case kind == "SCHEMA":
 		grant.OnSchema = normalizeSQLIdentifier(sourcePlatform, objectName)
 	case kind == "SEQUENCE":
@@ -110,7 +122,7 @@ func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) (schemamodel.G
 	}
 	grant := schemamodel.Grant{
 		Role:       role,
-		Privileges: expandGrantedAll(node.Privileges, node.ObjectType),
+		Privileges: expandGrantedAll(node.Privileges, node.ObjectType, sourcePlatform),
 		WithOption: node.WithOption,
 		Comment:    node.Comment,
 	}

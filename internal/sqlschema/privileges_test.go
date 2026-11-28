@@ -412,3 +412,40 @@ func TestRead_RevokeAll_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestRead_MySQLGrantTargets_HappyPath pins the targets a MySQL-family grant
+// names without a database: `*`, the database the session selects, which
+// reads as a grant on the database itself, and a function or a procedure by
+// its name alone. ALL on a routine is EXECUTE and ALTER ROUTINE there, as the
+// descriptor lists it, on every release of both servers.
+func TestRead_MySQLGrantTargets_HappyPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		sql      string
+		want     []privilege
+	}{
+		{
+			name: "the selected database", platform: platform.MySQL, sql: "GRANT INSERT, EXECUTE ON * TO r WITH GRANT OPTION;",
+			want: []privilege{{Role: "r", Target: "DATABASE", Privileges: []string{"INSERT", "EXECUTE"}, WithOption: true}},
+		},
+		{
+			name: "a function", platform: platform.MariaDB, sql: "GRANT EXECUTE ON FUNCTION f1 TO r;",
+			want: []privilege{{Role: "r", Target: "ROUTINE f1()", Privileges: []string{"EXECUTE"}}},
+		},
+		{
+			name: "ALL on a procedure", platform: platform.MySQL, sql: "GRANT ALL ON PROCEDURE p1 TO r;",
+			want: []privilege{{Role: "r", Target: "ROUTINE p1()", Privileges: []string{"ALTER ROUTINE", "EXECUTE"}}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), test.platform)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(privileges(database.Grants), qt.DeepEquals, test.want)
+		})
+	}
+}

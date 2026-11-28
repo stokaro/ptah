@@ -209,3 +209,36 @@ func TestPlan_RefusesToReplaceAMySQLRoutineItMayNotGrantThePrivilegesOnAgain(t *
 		})
 	}
 }
+
+// A privilege the plan revokes on a routine it replaces stays revoked. The
+// revokes run before the DROP, and a privilege given back after the CREATE
+// would undo them. The plan revokes ALTER ROUTINE from app_r and the grant
+// option on EXECUTE, so app_r gets back EXECUTE alone, and m_r, which held only
+// the grant option, gets back nothing. A user on another host is not the
+// grantee a revoke names by its name alone.
+func TestPlan_GivesBackNoPrivilegeTheMySQLPlanRevokes(t *testing.T) {
+	c := qt.New(t)
+	diff := replacedProcedure("rt", heldOnShopRt()...)
+	diff.GrantsRemoved = []difftypes.GrantRef{
+		{Role: "app_r", Privilege: "ALTER ROUTINE", ObjectType: "PROCEDURE", ObjectName: "rt"},
+		{Role: "svc", Privilege: "EXECUTE", ObjectType: "PROCEDURE", ObjectName: "rt"},
+	}
+	diff.GrantOptionsRevoked = []difftypes.GrantRef{
+		{Role: "app_r", Privilege: "EXECUTE", ObjectType: "PROCEDURE", ObjectName: "rt", WithOption: true},
+		{Role: "m_r", Privilege: "USAGE", ObjectType: "PROCEDURE", ObjectName: "rt", WithOption: true},
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, platform.MariaDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"REVOKE GRANT OPTION ON PROCEDURE `rt` FROM `app_r`",
+		"REVOKE GRANT OPTION ON PROCEDURE `rt` FROM `m_r`",
+		"REVOKE ALTER ROUTINE ON PROCEDURE `rt` FROM `app_r`",
+		"REVOKE EXECUTE ON PROCEDURE `rt` FROM `svc`",
+		"-- Replace procedure rt: body\nDROP PROCEDURE IF EXISTS `rt`",
+		"-- Modify procedure rt: body\nCREATE PROCEDURE `rt`() READS SQL DATA BEGIN SELECT 2; END",
+		"GRANT EXECUTE ON PROCEDURE `rt` TO `app_r`@`%`",
+		"GRANT EXECUTE ON PROCEDURE `rt` TO `svc`@`10.1.%`",
+	})
+}
