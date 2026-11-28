@@ -94,16 +94,9 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{}
 
-	schemas, err := r.readSchemas(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read schemas: %w", err)
+	if err := r.recordSchemas(ctx, schema); err != nil {
+		return nil, err
 	}
-	schema.Schemas = schemas
-	outside, err := r.readSchemasOutOfScope(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read schemas outside the read: %w", err)
-	}
-	schema.SchemasOutOfScope = outside
 
 	tables, err := r.readTables(ctx)
 	if err != nil {
@@ -198,6 +191,22 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	return schema, nil
 }
 
+// recordSchemas records the schemas the read covers in schema, and the user
+// schemas it leaves out.
+func (r *Reader) recordSchemas(ctx context.Context, schema *catalog.Database) error {
+	schemas, err := r.readSchemas(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read schemas: %w", err)
+	}
+	schema.Schemas = schemas
+	outside, err := r.readSchemasOutOfScope(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read schemas outside the read: %w", err)
+	}
+	schema.SchemasOutOfScope = outside
+	return nil
+}
+
 // recordFunctions reads the database's functions and procedures into schema,
 // and claims the principal each one runs as is read: a routine the read gives
 // no principal runs as its caller or its owner.
@@ -270,7 +279,7 @@ func (r *Reader) readSchemasOutOfScope(ctx context.Context) ([]string, error) {
 	}
 	defer rows.Close()
 
-	names := []string{}
+	names := make([]string, 0)
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {

@@ -65,7 +65,7 @@ func TestReportOneSchemaReads_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a SQL Server database holding no other schema", dialect: platform.SQLServer,
-			from: listedDatabase("dbo", []string{}), to: declaringFile("dbo", "app"),
+			from: listedDatabase("dbo", make([]string, 0)), to: declaringFile("dbo", "app"),
 		},
 		{
 			name: "schemas the run names", dialect: platform.SQLServer, requested: []string{"dbo", "app"},

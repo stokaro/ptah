@@ -192,7 +192,11 @@ func (g guard) confinedPermissionChange(tokens []lexer.Token, roles replay.Datab
 // OPTION, CASCADE and, on a REVOKE, AS and one principal.
 func sqlServerGrantees(tokens []lexer.Token) (grantees []string, ok bool) {
 	revoke := tokens[0].MatchIdentifierValue("REVOKE")
-	index := sqlServerGranteeListStart(tokens, revoke)
+	listWords := []string{"TO"}
+	if revoke {
+		listWords = append(listWords, "FROM")
+	}
+	index := sqlServerGranteeListStart(tokens, listWords...)
 	if index == replay.MutationTargetNotFound {
 		return nil, false
 	}
@@ -226,12 +230,12 @@ func sqlServerGrantees(tokens []lexer.Token) (grantees []string, ok bool) {
 }
 
 // sqlServerGranteeListStart is the index of the first grantee of a GRANT, DENY
-// or REVOKE: the token after the first TO, or FROM where revoke. Both words
-// are reserved, so a column or a securable written without brackets cannot
-// take either name.
-func sqlServerGranteeListStart(tokens []lexer.Token, revoke bool) int {
+// or REVOKE: the token after the first of words, which are TO and, on a
+// REVOKE, FROM. Both are reserved, so a column or a securable written without
+// brackets cannot take either name.
+func sqlServerGranteeListStart(tokens []lexer.Token, words ...string) int {
 	for index, token := range tokens {
-		if token.MatchIdentifierValue("TO") || revoke && token.MatchIdentifierValue("FROM") {
+		if slices.ContainsFunc(words, token.MatchIdentifierValue) {
 			return index + 1
 		}
 	}
