@@ -555,11 +555,10 @@ SQL:
   against MySQL 8.4.11 creates the first and answers `ERROR 1061` on the
   second.
 - **A comparison that reaches the target asks it instead of guessing.** The
-  conservative rule above is what an offline run still does, and it was the
-  only answer until the names could be resolved against the server: `a` beside
-  `ä` is accepted by both engines and was reported as a possible conflict for
-  want of anything better. A comparison holding a connection now asks, and gets
-  the engine's own answer for each pair.
+  conservative rule above is what an offline run does: `a` beside `ä` is
+  accepted by both engines, and offline it is reported as a possible conflict.
+  A comparison holding a connection asks, and gets the engine's own answer for
+  each pair.
   What is asked is the collision rather than a fold to imitate, because neither
   engine exposes the fold its identifier comparison uses -- measured, none of
   `LOWER()`, `utf8mb4_general_ci`, `utf8mb4_unicode_ci`, `utf8mb4_uca1400_ai_ci`
@@ -567,6 +566,13 @@ SQL:
   keys either creates or answers `ERROR 1061`, which is exactly the question,
   and a temporary table is this session's alone and gives the per-table
   namespace an index name actually lives in.
+  A URL that names no database selects none, and an unqualified temporary
+  table answers `ERROR 1046` there. On such a run the table goes in the first
+  database, in byte order, that the comparison names and that is not one of
+  the server's own. A run that names none of the server's databases asks
+  nothing and keeps the conservative rule. `PRIMARY` is not asked about in any
+  letter case: both engines answer `ERROR 1280` to a key of that name, and it
+  is the name of a primary key's index, which no other key may take.
   Only names Ptah cannot fold are asked about, so a schema whose index names are
   all ASCII reaches no server and pays nothing. Sixty-four keys is the per-table
   ceiling on both engines, so a larger set is asked in several statements, each
