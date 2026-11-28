@@ -57,6 +57,12 @@ ptah migrations checkpoint --migrations-dir ./migrations \
   --shadow-db "sqlite://$(mktemp -u).db" --dry-run
 ```
 
+On MySQL and MariaDB, a read of the shadow database names the table of each
+grant with the shadow database's name. The checkpoint writes the table or the
+column alone, as it writes the tables themselves, so it replays into a database
+of any name. A grant on the database itself still names the shadow database
+(stokaro/ptah#6844).
+
 | Flag | Purpose |
 | --- | --- |
 | `--shadow-db` | Ephemeral database the directory is replayed into (required). |

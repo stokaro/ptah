@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/logingrants"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/portablegrants"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/shadowdb"
@@ -493,7 +494,10 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
 	logingrants.Report(opts.Diagnostics, shadowSchema)
-	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, shadowConn.Info().Dialect, opts.Runtime)
+	// The grants name the shadow database, which is never the database the
+	// checkpoint is replayed into; without the rewrite a replay elsewhere
+	// grants on objects that do not exist there.
+	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, portablegrants.Unqualified(shadowSchema), shadowConn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("capture checkpoint schema: %w", err)
 	}
