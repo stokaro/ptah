@@ -371,6 +371,82 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 			want: "the plan creates role Z\u00e4hler and drops role Gr\u00f6\u00dfe, and without a connection Ptah " +
 				"cannot tell whether they are one name under the database collation, so the create may fail",
 		},
+		{
+			// SQL Server keeps a constraint in the namespace of the schema of
+			// its table, and writes ADD CONSTRAINT before DROP VIEW.
+			name:    "a constraint added in place of a view",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "REPORT", TableName: "dbo.t1", Type: "UNIQUE", Columns: []string{"n"}}},
+				ViewsRemoved:     difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS x"}},
+			},
+			want: "the plan creates constraint dbo.REPORT on dbo.t1 and drops view dbo.Report, and sqlserver keeps both kinds " +
+				"in one namespace in a schema, where it may read the two names as one, so the create would fail while the " +
+				"view exists; make the change in two migrations, the first dropping the view dbo.Report and the second " +
+				"creating the constraint dbo.REPORT on dbo.t1",
+		},
+		{
+			name:    "the primary key of a created table in place of a procedure",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:       difftypes.TableChanges{{Name: "sales.t1", Table: schemamodel.Table{Name: "t1", Schema: "sales", PrimaryKeyName: "Report"}}},
+				ProceduresRemoved: difftypes.FunctionChanges{procedure("sales.Report", "BEGIN SELECT 1 END")},
+			},
+			want: "the plan creates constraint sales.Report on sales.t1 and drops procedure sales.Report, and sqlserver keeps " +
+				"both kinds in one namespace in a schema, where the two are one name",
+		},
+		{
+			name:    "a trigger added in place of a view",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TriggersAdded: []difftypes.TriggerRef{{TriggerName: "AUDIT", TableName: "dbo.t1"}},
+				ViewsRemoved:  difftypes.ViewChanges{{Name: "dbo.Audit", Body: "SELECT 1 AS x"}},
+			},
+			want: "the plan creates trigger dbo.AUDIT on dbo.t1 and drops view dbo.Audit",
+		},
+		{
+			name:    "a view created in place of a dropped constraint",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ViewsAdded:         difftypes.ViewChanges{{Name: "REPORT", Body: "SELECT 1 AS x"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "Report", TableName: "t1", Type: "UNIQUE"}},
+			},
+			want: "the plan creates view dbo.REPORT and drops constraint dbo.Report on dbo.t1",
+		},
+		{
+			name:    "a procedure created in place of a dropped trigger",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:  difftypes.FunctionChanges{procedure("AUDIT", "BEGIN SELECT 1 END")},
+				TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "dbo.Audit", TableName: "t1"}},
+			},
+			want: "the plan creates procedure dbo.AUDIT and drops trigger dbo.Audit on dbo.t1",
+		},
+		{
+			// SQL Server keeps the constraints of every table of a schema in
+			// one namespace, and writes ADD CONSTRAINT before DROP CONSTRAINT
+			// when the two are on two tables.
+			name:    "a unique constraint moved to another table",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "uq", TableName: "dbo.t2", Type: "UNIQUE", Columns: []string{"a"}}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "uq", TableName: "dbo.t1", Type: "UNIQUE"}},
+			},
+			want: "the plan creates constraint dbo.uq on dbo.t2 and drops constraint dbo.uq on dbo.t1, and sqlserver keeps " +
+				"the constraints of every table in one namespace in a schema, where the two are one name, so the create " +
+				"would fail while the constraint exists; make the change in two migrations, the first dropping the " +
+				"constraint dbo.uq on dbo.t1 and the second creating the constraint dbo.uq on dbo.t2",
+		},
+		{
+			name:    "the primary key of a created table under the name of a dropped key",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:        difftypes.TableChanges{{Name: "t2", Table: schemamodel.Table{Name: "t2", PrimaryKeyName: "pk"}}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "PK", TableName: "t1", Type: "PRIMARY KEY"}},
+			},
+			want: "the plan creates constraint dbo.pk on dbo.t2 and drops constraint dbo.PK on dbo.t1, and sqlserver keeps " +
+				"the constraints of every table in one namespace in a schema, where it may read the two names as one",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -585,6 +661,73 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			diff: difftypes.SchemaDiff{
 				ViewsAdded:   difftypes.ViewChanges{{Name: "MixedView", Body: "SELECT 2 AS a"}},
 				ViewsRemoved: difftypes.ViewChanges{{Name: "mixedview", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// The control for the constraint rows: a constraint whose name
+			// differs from a view's beyond case is another name.
+			name:    "a SQL Server constraint added beside a view of another name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "UQ_n", TableName: "dbo.t1", Type: "UNIQUE", Columns: []string{"n"}}},
+				ViewsRemoved:     difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS x"}},
+			},
+		},
+		{
+			// A constraint is in the schema of its table, so the constraint
+			// sales.Report is another name than the view dbo.Report.
+			name:    "a SQL Server constraint in another schema",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "Report", TableName: "sales.t1", Type: "UNIQUE", Columns: []string{"n"}}},
+				ViewsRemoved:     difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS x"}},
+			},
+		},
+		{
+			// Two constraints of one name are one kind, and a constraint
+			// whose name changes only in case is dropped before it is added.
+			name:    "a SQL Server constraint renamed in case",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "UQ_N", TableName: "dbo.t1", Type: "UNIQUE", Columns: []string{"n"}}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "UQ_n", TableName: "dbo.t1", Type: "UNIQUE"}},
+			},
+		},
+		{
+			// MySQL keeps a constraint apart from views.
+			name:    "a MySQL constraint added in place of a view",
+			dialect: platform.MySQL,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "report", TableName: "t1", Type: "UNIQUE", Columns: []string{"n"}}},
+				ViewsRemoved:     difftypes.ViewChanges{{Name: "report", Body: "SELECT 1 AS x"}},
+			},
+		},
+		{
+			// The planner drops a trigger before it creates one, so a trigger
+			// that moves to another table under its name runs.
+			name:    "a SQL Server trigger moved to another table",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TriggersAdded:   []difftypes.TriggerRef{{TriggerName: "Audit", TableName: "dbo.t2"}},
+				TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "Audit", TableName: "dbo.t1"}},
+			},
+		},
+		{
+			// A constraint is in the schema of its table.
+			name:    "a SQL Server constraint name moved to a table of another schema",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "uq", TableName: "sales.t2", Type: "UNIQUE", Columns: []string{"a"}}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "uq", TableName: "dbo.t1", Type: "UNIQUE"}},
+			},
+		},
+		{
+			// PostgreSQL names a check in its table.
+			name:    "a PostgreSQL check moved to another table",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "ck", TableName: "public.t2", Type: "CHECK", CheckExpression: "a > 0"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "ck", TableName: "public.t1", Type: "CHECK"}},
 			},
 		},
 	}

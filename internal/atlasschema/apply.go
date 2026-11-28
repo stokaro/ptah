@@ -57,6 +57,7 @@ import (
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrator"
@@ -98,6 +99,10 @@ type ApplyOptions struct {
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
 	DevURL string
+	// Names says how an error names the target and dev database URLs, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names urlname.Names
 	// baseline is what the database held before a rehearsal claimed it: its
 	// extensions, and the whole starting point of a dev database an atlas.hcl
 	// docker block provisioned. The comparison leaves what the desired schema
@@ -242,6 +247,10 @@ type ApplyRuntimeOptions struct {
 	// Runtime selects feature services and codecs for this operation. It is required.
 	Runtime engine.SchemaRuntime
 	DevURL  string
+	// Names says how an error names the target and dev database URLs, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names   urlname.Names
 	ToURLs  []string
 	Exclude []string
 	// ExcludeSources names where the run read each Exclude selector, for the
@@ -561,7 +570,7 @@ func loadPlacedDesiredApplySchema(
 	naming := opts.naming
 	if !naming.resolved {
 		var err error
-		naming, err = resolveDesiredNaming(ctx, conn.Info(), "--dev-url", opts.DevURL)
+		naming, err = resolveDesiredNaming(ctx, conn.Info(), opts.Names.DevSource().String(), opts.DevURL)
 		if err != nil {
 			return placedDesired{}, err
 		}
@@ -664,7 +673,7 @@ func computeApplyPlan(
 	// [DiffPolicy.CompareOptions].
 	compareOpts := opts.Policy.CompareOptions()
 	withSecretRotation(compareOpts, opts.Policy)
-	if err := spellGeneratedColumnsOnDev(ctx, opts.DevURL, info.Dialect, compareOpts, desired, current); err != nil {
+	if err := spellGeneratedColumnsOnDev(ctx, opts.DevURL, opts.Names.DevSource(), info.Dialect, compareOpts, desired, current); err != nil {
 		return applyComputation{}, err
 	}
 	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
@@ -1204,7 +1213,7 @@ func loadDesiredApplySchema(
 		Runtime:           opts.Runtime,
 		DatabaseURL:       conn.Info().URL,
 		Dialect:           conn.Info().Dialect,
-		DialectFlag:       "--url",
+		DialectSource:     urlname.Flag("--url"),
 		DialectFromServer: true,
 		// A --to database naming no database is read as the whole server, so
 		// that a server applies to a server; against one database it is
@@ -1215,7 +1224,7 @@ func loadDesiredApplySchema(
 		// replay resets it first: the dev database must not be the target, or
 		// a database --to also names.
 		Protected: append(
-			[]devlock.Protected{{Conn: conn, Refusal: errReplayDevURLIsTarget}},
+			[]devlock.Protected{{Conn: conn, Refusal: devURLIsTargetError(opts.Names, replayedMigrationDir)}},
 			set.DevProtected()...,
 		),
 		DevServerDisposable:       opts.DevServerDisposable,
@@ -1378,7 +1387,7 @@ func PrepareApply(
 	if conn == nil {
 		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
 	}
-	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect, opts.Names); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 	if err := RefuseServerDevDatabase(ctx, conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {
@@ -1397,6 +1406,7 @@ func PrepareApply(
 		Policy:                    opts.Policy,
 		ProtectedTables:           opts.ProtectedTables,
 		DevURL:                    opts.DevURL,
+		Names:                     opts.Names,
 		DevServerDisposable:       opts.DevServerDisposable,
 		ProjectEnv:                opts.ProjectEnv,
 		PreparedTo:                opts.PreparedTo,
@@ -1415,7 +1425,7 @@ func PrepareApply(
 		RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
 		Vars:                     opts.Vars,
 	}
-	naming, err := resolveDesiredNaming(ctx, conn.Info(), "--dev-url", opts.DevURL)
+	naming, err := resolveDesiredNaming(ctx, conn.Info(), opts.Names.DevSource().String(), opts.DevURL)
 	if err != nil {
 		return ApplyRuntimePlan{}, err
 	}
@@ -1767,7 +1777,9 @@ func checkStatement(ctx context.Context, executor catalog.SchemaExecutor, stmt s
 // generated column.
 func spellGeneratedColumnsOnDev(
 	ctx context.Context,
-	devURL, dialect string,
+	devURL string,
+	devSource urlname.Source,
+	dialect string,
 	opts *config.CompareOptions,
 	desired *schemamodel.Database,
 	current *catalog.Database,
@@ -1778,7 +1790,7 @@ func spellGeneratedColumnsOnDev(
 	}
 	dev, err := dbschema.ConnectToDatabase(ctx, devURL)
 	if err != nil {
-		return fmt.Errorf("connect to --dev-url: %w", err)
+		return fmt.Errorf("connect to %s: %w", devSource, err)
 	}
 	defer dbschema.CloseAndWarn(dev)
 	// A column the dev database refused is left out of the options, so the

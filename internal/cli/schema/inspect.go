@@ -205,6 +205,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		URLs:                sourceURLs,
 		URLFlag:             inspectSourceFlag(opts),
 		DevURL:              opts.devURL,
+		DevSource:           dbcli.URLNames(cmd, inspectDBURLFlag, inspectDevURLFlag, opts.devURL).Dev,
 		Schemas:             schemas,
 		Include:             opts.include,
 		Exclude:             exclude,

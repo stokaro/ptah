@@ -114,6 +114,13 @@ type Kept struct {
 	Server            Server
 	StartingPoint     *pgsnapshot.Snapshot
 	SchemaStates      []SchemaState
+	// DatabaseRoles are the SQL Server database roles the database held at
+	// the claim, beyond the fixed roles and public, and DatabaseRolesRecorded
+	// reports that the claim listed them. Only then does a realm reset drop
+	// a database role, each one DatabaseRoles does not name: a zero Kept says
+	// nothing about who created one, so the reset refuses every one it finds.
+	DatabaseRoles         []string
+	DatabaseRolesRecorded bool
 }
 
 // SchemaState is one PostgreSQL-family schema as a dev database's claim found

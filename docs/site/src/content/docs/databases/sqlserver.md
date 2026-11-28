@@ -36,7 +36,13 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&e
 
 The Ptah-only `schema` query parameter selects the default schema for
 introspection, migration metadata, and write helpers; it is removed before the
-URL reaches the driver, and it defaults to `dbo`:
+URL reaches the driver. Without it the schema is the default schema of the
+connection's database user, which `SCHEMA_NAME()` returns: `dbo` for a
+database owner, and `app` for a user created `WITH DEFAULT_SCHEMA = app`.
+SQL Server creates a name written without a schema there, so an unqualified
+table or routine is compared where the server puts it. Without a connection,
+as in `ptah migrations generate` with no dev database, an unqualified name is
+read as `dbo`'s:
 
 ```bash
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
@@ -317,11 +323,16 @@ and plans nothing.
 
 A routine is replaced in the schema the read found it in. The `DROP` and the
 `CREATE` both put the declared name in that schema. A routine the schema
-declares without a schema is compared in `dbo`, or in the URL's `schema`, and
-is replaced there. SQL Server resolves an unqualified name in the session's
-default schema first, so for an account whose default schema is another,
-`DROP FUNCTION [f]` would drop that schema's `f` and leave the routine the plan
-compared unchanged.
+declares without a schema is compared in the connection's schema (see
+[Connecting](#connecting)) and is replaced there. A URL whose
+`schema` parameter names a schema other than the user's default schema reads
+that schema, while the server still creates an unqualified name in the default
+schema, so leave the parameter out for such an account or qualify the names.
+
+A database side of `ptah schema diff` is read at that one schema. When the
+run names no `--schemas`, it says so on standard error, and names the schemas
+the other side declares beyond it, whose objects the diff compares as absent
+from the database. `--schemas dbo,app` reads both.
 
 A selection runs after the names are paired. `--schemas`, `--include` and
 `--exclude`, in both binaries (`--schema` in `ptah-compat`), select a schema
@@ -361,18 +372,35 @@ name differs from it only in case, so the drop frees the name the create
 takes, and `CREATE TRIGGER` fails while another trigger holds the name. A
 column added to a table that holds a column of that name fails the same way.
 
-Tables, views, functions, procedures and sequences share one namespace in a
-schema: a procedure cannot take the name a view or a function holds there. A
-declaration that gives objects of two of these kinds names the database may
-read as one is refused and names both objects, such as the view `dbo.Report`
-and the procedure `dbo.REPORT` under a case-insensitive collation, or the
-function `dbo.x` and the procedure `dbo.x` under any collation.
+Tables, views, functions, procedures, sequences, constraints and triggers
+share one namespace in a schema: a procedure cannot take the name a view or a
+function holds there. A constraint and a trigger are in the schema of their
+table, so two tables of a schema cannot each have a constraint named `pk`, or
+a trigger named `Audit`. A declaration that gives two of these objects names
+the database may read as one is refused and names both objects, such as the
+view `dbo.Report` and the procedure `dbo.REPORT` under a case-insensitive
+collation, the function `dbo.x` and the procedure `dbo.x` under any
+collation, the view `dbo.REPORT` and the primary key `Report` of `dbo.t1`, or
+the primary keys `pk` of `dbo.t1` and `dbo.t2`. A constraint the declaration
+leaves unnamed takes a name the server makes up, and a foreign key name Ptah
+derives is not compared either.
+
+A constraint the database holds is compared too, because a declaration that
+leaves the constraint unnamed keeps the name the database holds it under. On a
+database whose table `dbo.t1` holds the primary key `Report`, a schema that
+declares the table with an unnamed primary key beside the view `dbo.REPORT`
+is refused before anything runs, and so is a new table `dbo.t2` whose primary
+key is named `Report`. Give the new object another name, or rename the
+constraint first.
 
 So is a plan that creates an object of one kind and drops an object of another
 kind under such a name, because the plan creates before it drops and the
-server would refuse the create with error 2010. Make the change in two
-migrations: the first drops the old object, and the second creates the new
-one. The plan is not reordered to drop first. The drop takes every privilege
+server would refuse the create with error 2010 or 2714. A constraint that
+moves to another table under its name is refused for the same reason, and so
+is a table replaced by another table under its primary key name. Make the
+change in two migrations: the first drops the old object, and the second
+creates the new one. A trigger that moves to another table under its name is
+applied, because the plan drops a trigger before it creates one. The plan is not reordered to drop first. The drop takes every privilege
 on the old object, and a rollback would have to create the old object while
 the new one holds the name.
 
@@ -449,6 +477,15 @@ width and in kana, and refuses when the answers differ. The refusal names both
 collations and the clause to create the dev or shadow database with, such as
 `COLLATE SQL_Latin1_General_CP1_CI_AS`. Ptah does not provision a SQL Server
 database from a `docker://` URL, so you create it.
+
+A database role belongs to the database that holds it, so `schema apply
+--dev-url` runs the `CREATE ROLE` of a role the plan adds on the dev database,
+and creates there the roles the target holds. The cleanup after the rehearsal
+drops each role the dev database did not hold when the run began, with its
+memberships, so no role outlives the run. A dev database that holds a role of
+its own is refused, because the cleanup cannot tell whose the role is.
+`ALTER ROLE`, an application role and a user stay refused on a dev database:
+each can reach a principal the run did not create.
 
 Collations with different names that agree on the four sensitivities pass,
 such as `SQL_Latin1_General_CP1_CI_AS` and `Latin1_General_100_CI_AS`. They
@@ -828,9 +865,11 @@ refused, and neither is one in text Ptah does not read, such as `EXEC(@sql)`.
 `ptah migrations lint --dialect sqlserver` checks statements inside
 `BEGIN ... END`, `IF ... ELSE`, `WHILE`, and `TRY`/`CATCH` blocks, and the
 elements of `CREATE SCHEMA`. It also checks statements written without a
-semicolon between them. A nested `DROP TABLE` receives the same destructive
-finding as a standalone drop,
-at the line where the `DROP` starts.
+semicolon between them, and the statements an `EXEC` of one string literal
+runs. A nested `DROP TABLE` receives the same destructive finding as a
+standalone drop, at the line where the `DROP` starts. An `EXEC` of a
+variable or a concatenation is reported as a statement the parser could not
+read.
 
 Lint checks each possible branch without evaluating its condition. A condition
 the schema parser does not model retains its coverage finding. Lint follows the

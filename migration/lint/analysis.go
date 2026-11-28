@@ -130,7 +130,10 @@ type Statement struct {
 	Index int
 	// Span is the statement's byte range in [File.SQL].
 	Span SourceSpan
-	// SQL is the raw statement text as written (comments included).
+	// SQL is the raw statement text as written (comments included). For a
+	// statement a SQL Server EXEC runs from a string literal it is the text
+	// the server runs, each quote the literal doubles read as one, and Span is
+	// where that text stands inside the literal.
 	SQL string
 	// Canonical is the comment-stripped, whitespace-collapsed, uppercased
 	// display form. String literals keep their original case.
@@ -1075,11 +1078,15 @@ func attachStatements(
 			if statement.Routine != nil {
 				routine = &RoutineDefinition{BodyWords: slices.Clone(statement.Routine.BodyWords)}
 			}
+			text := statement.SQL
+			if statement.Runs != "" {
+				text = statement.Runs
+			}
 			file.Statements = append(file.Statements, Statement{
 				Target:          target,
 				Index:           index,
 				Span:            SourceSpan{Start: statement.Start, End: statement.End},
-				SQL:             statement.SQL,
+				SQL:             text,
 				Canonical:       statement.Canonical,
 				Words:           statement.Words,
 				Routine:         routine,
@@ -1087,7 +1094,7 @@ func attachStatements(
 				sourceWords:     statement.SourceWords,
 				effects:         statement.Effects,
 				suppressedRules: suppressed,
-				unparsed:        unparsedReason(file, statement.SQL, dialect, unparsed),
+				unparsed:        unparsedReason(file, text, dialect, unparsed),
 			})
 		}
 		next++

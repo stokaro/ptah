@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -94,6 +95,10 @@ type SimulateOptions struct {
 	// rehearsal then takes the realm a migration replay takes there; see
 	// [ptah.run/internal/devclean.DevReplayRealm].
 	DevServerDisposable bool
+	// Names says how an error names the target and dev database URLs, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names urlname.Names
 }
 
 // SimulateOnDev rehearses the exact ordered apply plan on the --dev-url dev
@@ -145,7 +150,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs, opts.Names)
 	if err != nil {
 		return err
 	}
@@ -236,12 +241,13 @@ func connectSimulationDev(
 	targetConn *dbschema.DatabaseConnection,
 	targetURL string,
 	desiredURLs []string,
+	names urlname.Names,
 ) (simulationDev, error) {
 	targetInfo := targetConn.Info()
 	// The dialect check reads the URL as written: a `docker://` value names its
 	// engine in the text, so a mismatch is answerable before a container is
 	// started and a refused run pays for none.
-	if err := providerurl.ValidateDialectMatch(ctx, devURL, targetInfo.Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, devURL, targetInfo.Dialect, names); err != nil {
 		return simulationDev{}, err
 	}
 	// The alias checks below ask whether the dev database IS the target or the
@@ -261,13 +267,13 @@ func connectSimulationDev(
 	// that names the target names a realm beside it, and only the connection
 	// can say which.
 	serverDev := isDevServer(devURL)
-	if err := refuseDevURLAliases(ctx, devURL, targetURL, desiredURLs); err != nil {
+	if err := refuseDevURLAliases(ctx, devURL, targetURL, desiredURLs, names); err != nil {
 		return simulationDev{}, err
 	}
-	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
+	protected := []devlock.Protected{{Conn: targetConn, Refusal: devURLIsTargetError(names, rehearsedPlan)}}
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		if isDirectDatabaseURL(desired) {
-			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(desired)})
+			protected = append(protected, devlock.Protected{URL: desired, Refusal: devURLIsDesiredError(names, desired)})
 		}
 	}
 
@@ -286,16 +292,16 @@ func connectSimulationDev(
 	devConn, err := connect(ctx, strings.TrimSpace(resolved))
 	if err != nil {
 		release()
-		return simulationDev{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return simulationDev{}, fmt.Errorf("connect to %s: %w", names.DevSource(), err)
 	}
 
 	devInfo := devConn.Info()
 	if platform.NormalizeDialect(devInfo.Dialect) != platform.NormalizeDialect(targetInfo.Dialect) {
 		dbschema.CloseAndWarn(devConn)
 		release()
-		return simulationDev{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
+		return simulationDev{}, names.DialectMismatch(devInfo.Dialect, targetInfo.Dialect)
 	}
-	if err := checkSimulationSchemaScope(devInfo, targetInfo); err != nil {
+	if err := checkSimulationSchemaScope(devInfo, targetInfo, names); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
 		return simulationDev{}, err
@@ -304,7 +310,7 @@ func connectSimulationDev(
 	// builds the target's state on the dev database and runs the plan there.
 	// A dev database that reads two names otherwise would rehearse another
 	// state, so it is refused before anything is reset.
-	if err := devcollation.Refuse(ctx, targetConn, devConn, "the --dev-url database"); err != nil {
+	if err := devcollation.Refuse(ctx, targetConn, devConn, names.DevSource().Database()); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
 		return simulationDev{}, err
@@ -353,7 +359,7 @@ func connectSimulationDev(
 // desired-state database; see [connectSimulationDev] for the URLs it does not
 // read. Every pair it skips is compared live once the dev database is
 // connected.
-func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredURLs []string) error {
+func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredURLs []string, names urlname.Names) error {
 	// A provider owns the grammar of its addresses, so two of them are
 	// compared by the databases their sessions select, once connected.
 	if _, served := providerurl.Provided(ctx, devURL); served || devdocker.ResolvedPerRun(ctx, devURL) {
@@ -362,10 +368,10 @@ func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredU
 	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
 		sameTarget, err := atlasurl.MayAddressSameDatabaseBeforeLiveCheck(devURL, target)
 		if err != nil {
-			return fmt.Errorf("compare --dev-url with target database: %w", err)
+			return fmt.Errorf("compare %s with target database: %w", names.DevSource(), err)
 		}
 		if sameTarget {
-			return errDevURLIsTarget
+			return devURLIsTargetError(names, rehearsedPlan)
 		}
 	}
 	if isDevServer(devURL) {
@@ -374,27 +380,35 @@ func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredU
 	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
 		if err != nil {
-			return fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
+			return fmt.Errorf("compare %s with --to desired-state database %q: %w", names.DevSource(), desired, err)
 		}
 		if sameDesired {
-			return devURLIsDesiredError(desired)
+			return devURLIsDesiredError(names, desired)
 		}
 	}
 	return nil
 }
 
-// errDevURLIsTarget is the refusal of a dev URL that names the target, by its
-// URL or by what its server answers.
-var errDevURLIsTarget = errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+// Where a dev URL that names the target is refused, the refusal says what
+// would have reset the dev database: a rehearsal of the plan, or the replay
+// of a --to migration directory.
+const (
+	rehearsedPlan        = "the plan is rehearsed on it"
+	replayedMigrationDir = "the migration directory is replayed on it"
+)
 
-// errReplayDevURLIsTarget refuses a dev database that is the target when a
-// --to migration directory is about to be replayed on it.
-var errReplayDevURLIsTarget = errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the migration directory is replayed on it")
+// devURLIsTargetError is the refusal of a dev URL that names the target, by
+// its URL or by what its server answers. before says what would reset the
+// dev database: [rehearsedPlan] or [replayedMigrationDir].
+func devURLIsTargetError(names urlname.Names, before string) error {
+	return fmt.Errorf("%s must not point at the target database: the dev database is reset destructively before %s", names.DevSource(), before)
+}
 
 // devURLIsDesiredError is the refusal of a dev URL that names a desired-state
 // database, by its URL or by what its server answers.
-func devURLIsDesiredError(desired string) error {
-	return fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
+func devURLIsDesiredError(names urlname.Names, desired string) error {
+	return fmt.Errorf("%s must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it",
+		names.DevSource(), desired)
 }
 
 // aliasCandidates returns the URLs worth asking whether devURL already names
@@ -503,7 +517,7 @@ func rehearseStatementsOnDev(
 		return err
 	}
 	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
-		WithSurvivors(baseline.Survivors)
+		WithSurvivors(baseline.Survivors).WithDatabaseRoles(baseline.DatabaseRoles)
 	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
@@ -619,17 +633,15 @@ func withDevRoleHint(err error, baseline devclean.Baseline) error {
 // names on the dev session as the target does; see [resolveNamesAsTarget]. A
 // URL that pins a schema claims that schema alone, and the plan's unqualified
 // names would land in another one, so that pair is refused.
-func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
+func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo, names urlname.Names) error {
 	if schemaScopeNamesDatabase(targetInfo.Dialect) {
 		return nil
 	}
 	if devInfo.Schema == targetInfo.Schema || realmPairResolvesApart(devInfo, targetInfo) {
 		return nil
 	}
-	return fmt.Errorf(
-		"--dev-url schema scope %q does not match --url schema scope %q; point --dev-url at a dev database using the same schema",
-		devInfo.Schema, targetInfo.Schema,
-	)
+	return fmt.Errorf("%s does not match %s; point %s at a dev database using the same schema",
+		names.DevSource().Attribute("schema scope", devInfo.Schema), names.TargetSource().Attribute("schema scope", targetInfo.Schema), names.DevSource())
 }
 
 // resolveNamesAsTarget returns devConn, a pinned dev session, resolving
@@ -775,7 +787,7 @@ func recreateCurrentSchema(
 		return nil, err
 	}
 	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
-		WithSurvivors(baseline.Survivors)
+		WithSurvivors(baseline.Survivors).WithDatabaseRoles(baseline.DatabaseRoles)
 	dev := baselineDev{
 		info:     devConn.Info(),
 		guard:    guard,

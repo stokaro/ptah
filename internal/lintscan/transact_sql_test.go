@@ -96,6 +96,32 @@ func TestSplit_TransactSQLStatements(t *testing.T) {
 			sql:  "END;\nDROP TABLE dbo.users;",
 			want: []splitStatement{{SQL: "END", Line: 1}, {SQL: "DROP TABLE dbo.users", Line: 2}},
 		},
+		{
+			name: "the statements an EXEC of a literal runs",
+			sql:  "-- reviewed\nEXEC(N'DROP TABLE dbo.a; TRUNCATE TABLE dbo.b');\nEXEC sp_executesql N'DELETE FROM dbo.c';",
+			want: []splitStatement{
+				{SQL: "DROP TABLE dbo.a", Line: 2, Comments: []string{"-- reviewed"}},
+				{SQL: "TRUNCATE TABLE dbo.b", Line: 2, Comments: []string{"-- reviewed"}},
+				{SQL: "DELETE FROM dbo.c", Line: 3},
+			},
+		},
+		{
+			name: "a literal over several lines and an EXEC inside it",
+			sql:  "EXEC(N'\nDROP TABLE dbo.a;\nEXEC(N''DROP TABLE dbo.b'')')",
+			want: []splitStatement{
+				{SQL: "DROP TABLE dbo.a", Line: 2},
+				{SQL: "DROP TABLE dbo.b", Line: 3},
+			},
+		},
+		{
+			name: "an EXEC of a variable, of a concatenation and of an unreadable literal",
+			sql:  "EXEC(@sql);\nEXEC(N'SELECT 1' + N'');\nEXEC(N'END');",
+			want: []splitStatement{
+				{SQL: "EXEC(@sql)", Line: 1},
+				{SQL: "EXEC(N'SELECT 1' + N'')", Line: 2},
+				{SQL: "EXEC(N'END')", Line: 3},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -246,4 +272,27 @@ func TestSplit_TransactSQLQuotedIdentifier(t *testing.T) {
 	c.Assert(statements[0].SQL, qt.Equals, "DROP TABLE [a]]b; DROP TABLE hidden]")
 	c.Assert(statements[0].Words, qt.DeepEquals, []string{"DROP", "TABLE", "[a]]b; DROP TABLE hidden]"})
 	c.Assert(statements[1].SQL, qt.Equals, "DROP TABLE dbo.users")
+}
+
+// A statement an EXEC runs from a literal that doubles a quote is read as the
+// server runs it: Runs carries the text with each doubled quote read as one,
+// and the words come from that text, while SQL stays the source range.
+func TestSplit_TransactSQLExecLiteralRuns(t *testing.T) {
+	c := qt.New(t)
+	sql := "EXEC(N'UPDATE dbo.t SET n = ''a''; DROP TABLE dbo.u');"
+
+	statements := lintscan.Split(sql, lintscan.ForDialect("sqlserver"))
+
+	got := make([][]string, 0, len(statements))
+	for _, statement := range statements {
+		got = append(got, []string{statement.SQL, statement.Runs, strings.Join(statement.Words, " ")})
+	}
+	c.Assert(got, qt.DeepEquals, [][]string{
+		{"UPDATE dbo.t SET n = ''a''", "UPDATE dbo.t SET n = 'a'", "UPDATE DBO . T SET N = 'a'"},
+		{"DROP TABLE dbo.u", "", "DROP TABLE DBO . U"},
+	})
+	c.Assert(lintext.ValidateSplit(
+		lintext.SplitRequest{Sources: []lintext.Source{{Name: "1.up.sql", SQL: sql}}},
+		lintext.SplitResult{Files: [][]lintext.Statement{statements}},
+	), qt.IsNil)
 }

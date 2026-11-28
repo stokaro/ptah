@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/generator"
 )
 
@@ -701,7 +702,7 @@ func prepareAtlasMigrateDiffSource(
 	if err := toSet.EnsureDevIsolation(ctx, opts.devURL); err != nil {
 		return atlassource.Set{}, err
 	}
-	if _, _, err := atlassource.PinDialect(ctx, opts.devURL, toSet); err != nil {
+	if _, _, err := atlassource.PinDialect(ctx, opts.devURL, urlname.Source{}, toSet); err != nil {
 		return atlassource.Set{}, err
 	}
 	return toSet, nil

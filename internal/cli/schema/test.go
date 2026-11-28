@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/dbtest"
 )
 
@@ -555,10 +556,10 @@ func resolveTestDesiredDatabase(
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-		Runtime:     opts.runtime,
-		DatabaseURL: opts.dbURL,
-		Dialect:     devDialect,
-		DialectFlag: "--" + testDBURLFlag,
+		Runtime:       opts.runtime,
+		DatabaseURL:   opts.dbURL,
+		Dialect:       devDialect,
+		DialectSource: urlname.Flag("--" + testDBURLFlag),
 	})
 	if err != nil {
 		return nil, err

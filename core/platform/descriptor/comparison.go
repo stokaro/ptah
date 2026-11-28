@@ -150,13 +150,20 @@ type Comparison struct {
 	// SharedObjectNamespace states the kinds of object that share one
 	// namespace in a schema, so an object of one kind cannot take a name an
 	// object of another kind holds there. SQL Server keeps tables, views,
-	// routines and sequences in sys.objects: CREATE beside an object of
-	// another kind of that name fails with error 2714, and CREATE OR ALTER
-	// with error 2010. A declaration that gives two of these kinds one name
-	// is refused, and so is a plan that creates an object of one kind and
-	// drops an object of another the server may read as the same name, since
-	// the create would run while the other object exists. The zero value
-	// states no such namespace.
+	// routines, sequences, constraints and DML triggers in sys.objects:
+	// CREATE beside an object of another kind of that name fails with error
+	// 2714, and CREATE OR ALTER with error 2010. A declaration that gives two
+	// of these kinds one name is refused, and so is a plan that creates an
+	// object of one kind and drops an object of another the server may read
+	// as the same name, since the create would run while the other object
+	// exists. A constraint or a trigger is in the schema of its table, and
+	// two constraints or two triggers of two tables are compared too; so is a
+	// constraint the plan creates on one table and drops on another, since
+	// the plan adds a constraint before it drops one. A constraint the
+	// database holds and the plan keeps is compared with each object the plan
+	// creates, since a declaration that leaves a constraint unnamed keeps the
+	// name the server holds it under. The zero value states no such
+	// namespace.
 	//
 	// A SQL Server synonym is in sys.objects too: CREATE SYNONYM beside the
 	// view of its name fails with error 2714. A synonym is a feature owner's
@@ -362,4 +369,10 @@ type ObjectNamespace struct {
 	Routines bool `json:"routines,omitempty"`
 	// Sequences reports that sequences are in the namespace.
 	Sequences bool `json:"sequences,omitempty"`
+	// Constraints reports that the named constraints of a table are in the
+	// namespace, in the schema of their table.
+	Constraints bool `json:"constraints,omitempty"`
+	// Triggers reports that the triggers of a table are in the namespace, in
+	// the schema of their table.
+	Triggers bool `json:"triggers,omitempty"`
 }

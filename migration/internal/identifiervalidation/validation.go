@@ -89,9 +89,10 @@ func validateRoles(desired *schemamodel.Database, dialect string, semantics iden
 }
 
 // ObjectNames lists the names of the views, materialized views, routines,
-// sequences and triggers desired declares, with the table each trigger is on.
-// A schema-qualified name contributes its schema and its name, each without
-// its quotes. A nil desired lists nothing.
+// sequences and triggers desired declares, with the table each trigger is on,
+// and the names of the constraints it declares ([DeclaredConstraints]). A
+// schema-qualified name contributes its schema and its name, each without its
+// quotes. A nil desired lists nothing.
 //
 // It is the one list of these names. The comparison asks a server how it
 // compares them, and [ValidateTarget] checks that the server was asked about
@@ -119,6 +120,9 @@ func ObjectNames(desired *schemamodel.Database) []string {
 	for _, trigger := range desired.Triggers {
 		names = appendQualifiedIdentifier(names, trigger.Table)
 		names = appendQualifiedIdentifier(names, trigger.Name)
+	}
+	for _, constraint := range DeclaredConstraints(desired) {
+		names = append(names, constraint.Name)
 	}
 	return names
 }
@@ -296,21 +300,38 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 
 // kindedName is a declared object as [validateSharedNamespace] reads it: the
 // noun a message names it by, which is also its kind, so a function and a
-// procedure are two kinds.
+// procedure are two kinds, and for a constraint or a trigger the table it
+// belongs to.
 type kindedName struct {
 	noun string
+	host string
 	spelledName
 }
 
-// validateSharedNamespace refuses two declared objects of two kinds that the
-// target keeps in one namespace in a schema
+// phrase is how a message names the object: `view dbo.Report`, or
+// `constraint dbo.Report on dbo.t1`.
+func (k kindedName) phrase() string {
+	if k.host == "" {
+		return k.noun + " " + k.spelling
+	}
+	return k.noun + " " + k.spelling + " on " + k.host
+}
+
+// validateSharedNamespace refuses two declared objects that the target keeps
+// in one namespace in a schema
 // ([descriptor.Comparison.SharedObjectNamespace]) whose names it may read as
 // one name, spelled alike or not. Measured on SQL Server 2025: CREATE OR
 // ALTER PROCEDURE [dbo].[REPORT] beside the view dbo.Report fails with error
 // 2010 under a case-insensitive collation, and so does [dbo].[Report] under
 // any collation (stokaro/ptah#6741). So does the procedure dbo.x beside the
-// function dbo.x. Two objects of one kind are [validateSchemaObjects]'s to
-// check.
+// function dbo.x. A constraint and a trigger are in the schema of their
+// table: CREATE VIEW [dbo].[REPORT] beside the primary key Report of dbo.t1
+// fails with error 2714, and so does CREATE TRIGGER [Audit] beside the
+// procedure dbo.AUDIT (stokaro/ptah#6767). Two constraints or two triggers of
+// two tables are two objects there too: measured on SQL Server 2022, the
+// primary key pk of dbo.t2 beside the primary key pk of dbo.t1 fails with
+// error 2714. Any other two objects of one kind are [validateSchemaObjects]'s
+// to check ([Apart]).
 //
 // [descriptor.Comparison.SharedObjectNamespace]: ptah.run/core/platform/descriptor.Comparison
 func validateSharedNamespace(desired *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
@@ -324,6 +345,12 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 			objects = append(objects, kindedName{noun: noun, spelledName: spelledName{
 				spelling: schemaSpelling(name, semantics), namesake: NamesakeOf(name, semantics),
 			}})
+		}
+	}
+	hosted := func(shared bool, noun string, object Hosted) {
+		add(shared, noun, object.QualifiedName(semantics.DefaultSchema))
+		if shared {
+			objects[len(objects)-1].host = schemaSpelling(object.Table, semantics)
 		}
 	}
 	for _, table := range desired.Tables {
@@ -345,6 +372,12 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 	for _, sequence := range desired.Sequences {
 		add(namespace.Sequences, "sequence", sequence.QualifiedName())
 	}
+	for _, constraint := range DeclaredConstraints(desired) {
+		hosted(namespace.Constraints, "constraint", constraint)
+	}
+	for _, trigger := range desired.Triggers {
+		hosted(namespace.Triggers, "trigger", HostedTrigger(trigger.Name, trigger.Table))
+	}
 	byKey := make(map[string][]kindedName, len(objects))
 	var seen, unresolved []kindedName
 	for _, object := range objects {
@@ -353,7 +386,7 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 			earlier = seen
 		}
 		for _, other := range earlier {
-			if other.noun != object.noun && other.namesake.MayBe(object.namesake) {
+			if Apart(other.noun, other.host, object.noun, object.host) && other.namesake.MayBe(object.namesake) {
 				return sharedNamespaceError(other, object, dialect, rules)
 			}
 		}
@@ -367,29 +400,23 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 	return nil
 }
 
-// sharedNamespaceError names two declared objects of two kinds that dialect
-// keeps in one namespace, which it may read as one name, or which are one
+// sharedNamespaceError names two declared objects that dialect keeps in one
+// namespace, which it may read as one name, or which are one
 // name where they are spelled alike; see [conflictError] for the offline
 // wording.
 func sharedNamespaceError(previous, current kindedName, dialect string, rules identifier.Semantics) error {
-	pair := fmt.Sprintf("target %s %s and %s %s", previous.noun, previous.spelling, current.noun, current.spelling)
+	pair := fmt.Sprintf("target %s and %s", previous.phrase(), current.phrase())
+	namespace := NamespaceClause(previous.noun, current.noun, dialect)
 	if previous.spelling == current.spelling {
-		return fmt.Errorf(
-			"%w: %s are one name, and %s keeps both kinds in one namespace in a schema",
-			ptaherr.ErrInvalidSchemaDiff, pair, dialect,
-		)
+		return fmt.Errorf("%w: %s are one name, and %s", ptaherr.ErrInvalidSchemaDiff, pair, namespace)
 	}
 	if offlinenames.Unanswered(rules) && (previous.namesake.Unresolved() || current.namesake.Unresolved()) {
 		return fmt.Errorf(
-			"%w: without a connection Ptah cannot tell whether %s are one name under the database collation, "+
-				"and %s keeps both kinds in one namespace in a schema",
-			ptaherr.ErrInvalidSchemaDiff, pair, dialect,
+			"%w: without a connection Ptah cannot tell whether %s are one name under the database collation, and %s",
+			ptaherr.ErrInvalidSchemaDiff, pair, namespace,
 		)
 	}
-	return fmt.Errorf(
-		"%w: %s may have the same catalog identity, and %s keeps both kinds in one namespace in a schema",
-		ptaherr.ErrInvalidSchemaDiff, pair, dialect,
-	)
+	return fmt.Errorf("%w: %s may have the same catalog identity, and %s", ptaherr.ErrInvalidSchemaDiff, pair, namespace)
 }
 
 // schemaSpelling is name with the schema it is in written out, so that

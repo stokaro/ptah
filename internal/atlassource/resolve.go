@@ -51,6 +51,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/sourceformats"
@@ -86,10 +87,10 @@ type ResolveOptions struct {
 	// Dialect pins the SQL dialect used to parse local schema files and to
 	// validate database-backed sources.
 	Dialect string
-	// DialectFlag names the flag that pinned Dialect ("--url" for schema
-	// apply; "--dev-url", "--from", or "--to" for schema diff). It is used in
-	// dialect-mismatch errors.
-	DialectFlag string
+	// DialectSource names what pinned Dialect (--url for schema apply;
+	// --dev-url, --from, or --to for schema diff, or the dev database a
+	// project file names). It is used in dialect-mismatch errors.
+	DialectSource urlname.Source
 	// DialectFromServer says Dialect was read from a connected server rather
 	// than from a URL scheme. A database source is then held to it once the
 	// source is connected, because only then are two servers being compared:
@@ -106,10 +107,10 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
-	// DevURLSource names DevURL in an error the way the operator gave it, and
-	// `--dev-url` where it is empty: a native command that took the URL from
-	// its project file names the project file.
-	DevURLSource string
+	// DevSource names DevURL in an error the way the operator gave it, and
+	// --dev-url where it is the zero value: a native command that took the
+	// URL from its project file names the project file.
+	DevSource urlname.Source
 	// Protected are the databases the dev database must not be: the target a
 	// plan is computed for, and a database read as the other side of a
 	// comparison. A dev database that replays a migration directory or holds
@@ -571,13 +572,10 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 	}, conn)
 }
 
-// DevURLName is [ResolveOptions.DevURLSource], or `--dev-url` where it is
-// empty.
-func (o ResolveOptions) DevURLName() string {
-	if o.DevURLSource == "" {
-		return "--dev-url"
-	}
-	return o.DevURLSource
+// DevURLName is [ResolveOptions.DevSource], or --dev-url where it is the zero
+// value.
+func (o ResolveOptions) DevURLName() urlname.Source {
+	return o.DevSource.Or(urlname.Flag("--dev-url"))
 }
 
 // Connect opens the one database source of s as a resolution reads it, for a
@@ -627,7 +625,7 @@ func (s Set) ensureDialect(opts ResolveOptions) error {
 	if implied == "" || pinned == "" || atlasurl.SchemeDialectMatches(implied, pinned) {
 		return nil
 	}
-	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, implied, opts.DialectFlag, pinned)
+	return fmt.Errorf("%s database dialect %q does not match %s", s.Flag, implied, opts.DialectSource.Attribute("dialect", pinned))
 }
 
 // ensureServerDialect holds a connected database source to a dialect read from
@@ -646,7 +644,7 @@ func (s Set) ensureServerDialect(conn *dbschema.DatabaseConnection, opts Resolve
 	if server == "" || pinned == "" || server == pinned {
 		return nil
 	}
-	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, server, opts.DialectFlag, pinned)
+	return fmt.Errorf("%s database dialect %q does not match %s", s.Flag, server, opts.DialectSource.Attribute("dialect", pinned))
 }
 
 func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
@@ -802,7 +800,7 @@ func (s Set) ensureDevDialect(ctx context.Context, devURL string, opts ResolveOp
 	if devDialect == "" || pinned == "" || atlasurl.SchemeDialectMatches(devDialect, pinned) {
 		return nil
 	}
-	return fmt.Errorf("--dev-url dialect %q does not match %s dialect %q", devDialect, opts.DialectFlag, pinned)
+	return fmt.Errorf("%s does not match %s", opts.DevURLName().Attribute("dialect", devDialect), opts.DialectSource.Attribute("dialect", pinned))
 }
 
 // connectWith opens rawURL with connect, bounding the connection attempt by

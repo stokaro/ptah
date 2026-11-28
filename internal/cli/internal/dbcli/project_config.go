@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/rundiag"
+	"ptah.run/internal/urlname"
 )
 
 const (
@@ -438,6 +439,18 @@ func EffectiveString(
 // flag carries the Changed bit like any other.
 func ChecksUnusedDevURL(cmd *cobra.Command, flagName string) bool {
 	return flagChanged(cmd, flagName)
+}
+
+// URLNames names a native command's target and dev database URLs in its
+// errors: by the flags targetFlag and devFlag, and devURL as the dev database
+// the project file names where [EffectiveString] took it from there, which
+// is where devFlag did not set it, as [ChecksUnusedDevURL] reads it.
+func URLNames(cmd *cobra.Command, targetFlag, devFlag, devURL string) urlname.Names {
+	names := urlname.Names{Target: urlname.Flag("--" + targetFlag), Dev: urlname.Flag("--" + devFlag)}
+	if strings.TrimSpace(devURL) != "" && !ChecksUnusedDevURL(cmd, devFlag) {
+		names.Dev = urlname.ProjectDev()
+	}
+	return names
 }
 
 // EffectiveSchemas is the schema list a command reads: the --schemas value

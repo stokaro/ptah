@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/providerselect"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/urlname"
 )
 
 // unopened is a connector nothing here opens.
@@ -115,7 +116,7 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(providerurl.ValidateDialectMatch(servingFixture(c), row.devURL, row.target), qt.IsNil)
+			c.Assert(providerurl.ValidateDialectMatch(servingFixture(c), row.devURL, row.target, urlname.Names{}), qt.IsNil)
 		})
 	}
 }
@@ -125,7 +126,7 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 func TestValidateDialectMatch_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	err := providerurl.ValidateDialectMatch(servingFixture(c), "fixture:///tmp/dev.db", "postgres")
+	err := providerurl.ValidateDialectMatch(servingFixture(c), "fixture:///tmp/dev.db", "postgres", urlname.Names{})
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
 }

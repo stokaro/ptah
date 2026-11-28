@@ -42,6 +42,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/urlname"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrator"
 )
@@ -446,7 +447,7 @@ func checkAtlasSchemaApplyDevURL(ctx context.Context, url, devURL string) error 
 	if err != nil {
 		dialect = ""
 	}
-	_, err = devreach.Server(ctx, dialect, "--dev-url", devURL, dbcli.DefaultConnectTimeout)
+	_, err = devreach.Server(ctx, dialect, urlname.Names{}, devURL, dbcli.DefaultConnectTimeout)
 	return err
 }
 

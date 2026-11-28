@@ -152,10 +152,11 @@ func refuseEmptyEnv(flags *pflag.FlagSet, name string, rule envbinding.EmptyRule
 // stokaro/ptah#5030); `introspect`, `db read` and the rest describe a database
 // without comparing it, and keep the narrower default they document.
 func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
 		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
-		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory. "+
+		"a MySQL or MariaDB URL naming no database across every user database, a SQL Server URL at the schema its schema parameter "+
+		"names or else at the connection's default schema, and a YDB URL across every directory. "+
 		SchemasURLLimit+SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
@@ -170,9 +171,10 @@ const urlDecidesSchemas = "let the URL decide which schemas are read"
 // generate`, `up` and `status` -- runs against one database. Its help leaves
 // the whole server out, because the verb refuses the URL the clause describes.
 func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) {
-	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
 		"or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
+		"a SQL Server URL at the schema its schema parameter names or else at the connection's default schema, "+
 		"and a YDB URL across every directory. "+
 		SchemasURLLimit+SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)

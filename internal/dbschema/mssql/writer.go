@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -299,7 +300,61 @@ func (w *Writer) ResetObjects(ctx context.Context, _ dbreset.Scope) (objects []d
 // DropDatabaseRealm removes supported user objects from every user schema in
 // the current database as one transaction. The configured schema and dbo are
 // preserved, while other user-defined schemas are removed after their contents.
-func (w *Writer) DropDatabaseRealm(ctx context.Context) (resultErr error) {
+// It refuses a database that holds a database principal beyond the fixed ones,
+// since it cannot tell whose the principal is; see
+// [Writer.DropDatabaseRealmKeeping].
+func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
+	return w.dropDatabaseRealm(ctx, nil)
+}
+
+// DatabaseRoles returns the names of the database roles of the current
+// database beyond the fixed roles and public, sorted, for a claim to record:
+// a later [Writer.DropDatabaseRealmKeeping] drops every database role it does
+// not name.
+func (w *Writer) DatabaseRoles(ctx context.Context) ([]string, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	roles, err := listDatabaseRoles(ctx, w.db.QueryContext)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.name)
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
+// DropDatabaseRealmKeeping is [Writer.DropDatabaseRealm] after a claim. Where
+// the claim recorded the database roles ([dbreset.Kept.DatabaseRolesRecorded]),
+// it first drops, in the same transaction, every database role the claim did
+// not find, which only the run can have created: its memberships, then the
+// ownership of the schemas and roles it holds, which goes to dbo, then the
+// role. A database role lives in the database that holds it, so dropping it
+// confines its effect to the dev database. A role the claim found, and every
+// other database principal, is refused as [Writer.DropDatabaseRealm] refuses
+// it. A Kept that did not record the roles drops none.
+//
+// SQL Server keeps none of the extensions, schemas, default privileges or
+// database-scoped objects other engines keep, so a Kept that names one is
+// refused rather than allowed to remove it.
+func (w *Writer) DropDatabaseRealmKeeping(ctx context.Context, kept dbreset.Kept) error {
+	if len(kept.Extensions) > 0 || len(kept.Schemas) > 0 || len(kept.DefaultPrivileges.Rows) > 0 || len(kept.Artifacts) > 0 {
+		return fmt.Errorf("sqlserver: clean dev database realm: this writer cannot keep the extensions, schemas, default privileges or database-scoped objects the database held before the run")
+	}
+	if !kept.DatabaseRolesRecorded {
+		return w.dropDatabaseRealm(ctx, nil)
+	}
+	return w.dropDatabaseRealm(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		return dropDatabaseRolesAddedSince(ctx, tx, kept.DatabaseRoles)
+	})
+}
+
+// dropDatabaseRealm is [Writer.DropDatabaseRealm]. before, when set, runs in
+// the transaction ahead of the check for objects the cleanup cannot remove.
+func (w *Writer) dropDatabaseRealm(ctx context.Context, before func(context.Context, *sql.Tx) error) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
@@ -329,6 +384,11 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) (resultErr error) {
 
 	if err := requireRealmMetadataVisibility(ctx, tx); err != nil {
 		return err
+	}
+	if before != nil {
+		if err := before(ctx, tx); err != nil {
+			return err
+		}
 	}
 	unsupported, err := findUnsupportedRealmArtifact(ctx, tx, w.schema)
 	if err != nil {
@@ -1487,4 +1547,107 @@ func (w *transactionWriter) RolledBackByCancellation() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.canceledRollback
+}
+
+// databaseRole is one database role beyond the fixed roles and public.
+type databaseRole struct {
+	id   int
+	name string
+}
+
+// listDatabaseRoles lists the database roles of the current database beyond
+// the fixed roles and public, in the order they were created, through query.
+func listDatabaseRoles(
+	ctx context.Context,
+	query func(context.Context, string, ...any) (*sql.Rows, error),
+) ([]databaseRole, error) {
+	rows, err := query(ctx, `
+		SELECT p.principal_id, p.name
+		FROM sys.database_principals AS p
+		WHERE p.type = N'R'
+		  AND p.is_fixed_role = 0
+		  AND p.principal_id > 4
+		ORDER BY p.principal_id`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: list database roles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var roles []databaseRole
+	for rows.Next() {
+		var role databaseRole
+		if err := rows.Scan(&role.id, &role.name); err != nil {
+			return nil, fmt.Errorf("sqlserver: list database roles: %w", err)
+		}
+		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlserver: list database roles: %w", err)
+	}
+	return roles, nil
+}
+
+// dropDatabaseRolesAddedSince drops the database roles kept does not name, as
+// [Writer.DropDatabaseRealmKeeping] describes. The names compare exactly, as
+// the server stores them, so a role whose name only folds to a kept one is
+// dropped, and one the claim found is never.
+func dropDatabaseRolesAddedSince(ctx context.Context, tx *sql.Tx, kept []string) error {
+	roles, err := listDatabaseRoles(ctx, tx.QueryContext)
+	if err != nil {
+		return err
+	}
+	added := slices.DeleteFunc(roles, func(role databaseRole) bool { return slices.Contains(kept, role.name) })
+	if len(added) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(added))
+	for _, role := range added {
+		ids = append(ids, strconv.Itoa(role.id))
+	}
+	// The ids are integers the server returned, so they are written into the
+	// statement rather than bound, which a list of unknown length cannot be.
+	in := "(" + strings.Join(ids, ", ") + ")"
+	statements, err := collectStatements(ctx, tx, `
+		SELECT N'ALTER ROLE ' + QUOTENAME(r.name) + N' DROP MEMBER ' + QUOTENAME(m.name)
+		FROM sys.database_role_members AS drm
+		JOIN sys.database_principals AS r ON r.principal_id = drm.role_principal_id
+		JOIN sys.database_principals AS m ON m.principal_id = drm.member_principal_id
+		WHERE drm.role_principal_id IN `+in+` OR drm.member_principal_id IN `+in+`
+		UNION ALL
+		SELECT N'ALTER AUTHORIZATION ON SCHEMA::' + QUOTENAME(s.name) + N' TO [dbo]'
+		FROM sys.schemas AS s
+		WHERE s.principal_id IN `+in+`
+		UNION ALL
+		SELECT N'ALTER AUTHORIZATION ON ROLE::' + QUOTENAME(p.name) + N' TO [dbo]'
+		FROM sys.database_principals AS p
+		WHERE p.owning_principal_id IN `+in)
+	if err != nil {
+		return fmt.Errorf("sqlserver: drop the database roles the run created: %w", err)
+	}
+	for _, role := range added {
+		statements = append(statements, "DROP ROLE "+quoteIdent(role.name))
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("sqlserver: drop the database roles the run created: %s: %w", statement, err)
+		}
+	}
+	return nil
+}
+
+// collectStatements returns the one text column query yields, row by row.
+func collectStatements(ctx context.Context, tx *sql.Tx, query string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var statements []string
+	for rows.Next() {
+		var statement string
+		if err := rows.Scan(&statement); err != nil {
+			return nil, err
+		}
+		statements = append(statements, statement)
+	}
+	return statements, rows.Err()
 }

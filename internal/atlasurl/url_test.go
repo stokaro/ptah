@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/urlname"
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {
@@ -198,7 +199,7 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := atlasurl.ValidateDialectMatch(test.rawURL, test.targetDialect)
+			err := atlasurl.ValidateDialectMatch(test.rawURL, test.targetDialect, urlname.Names{})
 			c.Assert(err, qt.IsNil)
 		})
 	}
@@ -207,19 +208,19 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 func TestValidateDialectMatch_FailurePath(t *testing.T) {
 	t.Run("unsupported dev url", func(t *testing.T) {
 		c := qt.New(t)
-		err := atlasurl.ValidateDialectMatch("db2://localhost/dev", "postgres")
+		err := atlasurl.ValidateDialectMatch("db2://localhost/dev", "postgres", urlname.Names{})
 		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "db2://localhost/dev"`)
 	})
 
 	t.Run("mismatched dialect", func(t *testing.T) {
 		c := qt.New(t)
-		err := atlasurl.ValidateDialectMatch("mysql://localhost/dev", "postgres")
+		err := atlasurl.ValidateDialectMatch("mysql://localhost/dev", "postgres", urlname.Names{})
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mysql" does not match --url dialect "postgres"`)
 	})
 
 	t.Run("a MariaDB dev URL for a PostgreSQL target", func(t *testing.T) {
 		c := qt.New(t)
-		err := atlasurl.ValidateDialectMatch("mariadb://localhost/dev", "postgres")
+		err := atlasurl.ValidateDialectMatch("mariadb://localhost/dev", "postgres", urlname.Names{})
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mariadb" does not match --url dialect "postgres"`)
 	})
 }

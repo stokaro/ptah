@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/vulnerability"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -360,7 +361,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	dialect, err := effectiveDialect(opts, cfg.Dialect, prepared.devDialect)
+	dialect, err := effectiveDialect(opts, cfg.Dialect, prepared.devDialect, opts.devURLSource(projectCfg))
 	if err != nil {
 		return Report{}, err
 	}
@@ -554,6 +555,16 @@ func (opts Options) effectiveAtlasEnv(projectCfg projectconfig.Config) string {
 	)
 }
 
+// devURLSource names the dev URL [Options.effectiveDevURL] takes, for an
+// error: the dev database the project file names where it takes that one, and
+// --dev-url otherwise.
+func (opts Options) devURLSource(projectCfg projectconfig.Config) urlname.Source {
+	if !opts.Changed.DevURL && projectCfg.StringValue(projectconfig.StringDevURL).Present {
+		return urlname.ProjectDev()
+	}
+	return urlname.Flag("--dev-url")
+}
+
 func (opts Options) effectiveDevURL(projectCfg projectconfig.Config) string {
 	return effectiveProjectString(
 		projectconfig.Value[string]{Value: opts.DevURL, Present: opts.Changed.DevURL},
@@ -602,12 +613,12 @@ func loadEffectiveConfig(
 	return cfg, nil
 }
 
-func effectiveDialect(opts Options, configDialect, devDialect string) (string, error) {
+func effectiveDialect(opts Options, configDialect, devDialect string, dev urlname.Source) (string, error) {
 	dialect := configDialect
 	if opts.Changed.Dialect {
 		dialect = opts.Dialect
 	}
-	if err := validateDevURLDialect(dialect, devDialect, opts.Runtime); err != nil {
+	if err := validateDevURLDialect(dialect, devDialect, dev, opts.Runtime); err != nil {
 		return "", err
 	}
 	if dialect == "" {
@@ -1030,11 +1041,11 @@ func (c *baselineCollector) observe(
 // question with two comparisons, `ptah migrations lint` accepted policy files
 // that `ptah migrations up` then refused, which is the inconsistency
 // stokaro/ptah#270 asked to remove.
-func validateDevURLDialect(dialect, devDialect string, served schemaext.TargetResolver) error {
+func validateDevURLDialect(dialect, devDialect string, dev urlname.Source, served schemaext.TargetResolver) error {
 	if lintdialect.CompatibleIn(dialect, devDialect, served) {
 		return nil
 	}
-	return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
+	return fmt.Errorf("lint dialect %q does not match %s", dialect, dev.Attribute("dialect", devDialect))
 }
 
 // loadConfig reads the explicit --config file, or the conventional

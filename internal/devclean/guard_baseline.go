@@ -64,6 +64,14 @@ func (g *BaselineGuard) WithSchemaStateReturned(returned bool) *BaselineGuard {
 	return &BaselineGuard{replay: g.replay.WithSchemaStateReturned(returned)}
 }
 
+// WithDatabaseRoles returns a copy of the guard for a dev database whose
+// cleanups do with its database roles what roles answers; see
+// [ReplayGuard.WithDatabaseRoles]. A target's database role is recreated on
+// the dev database with the rest of its state, and dropped with the run.
+func (g *BaselineGuard) WithDatabaseRoles(roles func() replay.DatabaseRoleScope) *BaselineGuard {
+	return &BaselineGuard{replay: g.replay.WithDatabaseRoles(roles)}
+}
+
 // WithPublications returns a copy of the guard for a dev database whose
 // cleanups do with its publications what publications answers; see
 // [ReplayGuard.WithPublications].

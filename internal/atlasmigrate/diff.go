@@ -50,6 +50,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -614,7 +615,7 @@ func resolveDesiredState(
 		Runtime:           opts.Runtime,
 		DatabaseURL:       conn.Info().URL,
 		Dialect:           conn.Info().Dialect,
-		DialectFlag:       "--dev-url",
+		DialectSource:     urlname.Flag("--dev-url"),
 		DialectFromServer: true,
 		// A --to database naming no database is read as the whole server, to
 		// match a dev server; against a dev database it is refused below.

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/urlname"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -134,6 +136,13 @@ type DiffOptions struct {
 	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
+	// NoteOneSchemaReads writes a note to Diagnostics for each database side
+	// read at one schema of a database that may hold others; see
+	// [oneSchemaReads]. The native surface sets it. The compatibility surface
+	// leaves it off: the community binary reads a SQL Server URL at the same
+	// schema and says nothing, and its flag that names more schemas is
+	// spelled differently.
+	NoteOneSchemaReads bool
 	// ServerVersion pins the server the plan targets, as `--server-version`
 	// spells it. Empty plans against the dialect's newest preset, which is
 	// what this command did before the field existed.
@@ -260,12 +269,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Runtime:      opts.Runtime,
-		DatabaseURL:  sourceDatabaseURL(opts.DevURL, fromSet, toSet),
-		Dialect:      dialect,
-		DialectFlag:  prepared.dialectFlag,
-		DevURL:       opts.DevURL,
-		DevURLSource: opts.devURLSource(),
+		Runtime:       opts.Runtime,
+		DatabaseURL:   sourceDatabaseURL(opts.DevURL, fromSet, toSet),
+		Dialect:       dialect,
+		DialectSource: prepared.dialectSource,
+		DevURL:        opts.DevURL,
+		DevSource:     opts.devURLSource(),
 		// A database on either side is compared live with the dev database
 		// before the dev database is reset for the other side.
 		Protected:                append(fromSet.DevProtected(), toSet.DevProtected()...),
@@ -523,7 +532,7 @@ func documentServer(
 	asksDevServer := opts.ServerVersion == "" && documents
 	switch {
 	case documents && resolve != nil:
-		facts, err := devreach.ServerFacts(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, resolve)
+		facts, err := devreach.ServerFacts(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
 			return devreach.Facts{}, devAnswersNamesError(dialect, err)
 		}
@@ -536,7 +545,7 @@ func documentServer(
 		}
 		return facts, nil
 	case !opts.SkipUnusedDevURL && documents:
-		facts, err := devreach.ServerFacts(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, resolve)
+		facts, err := devreach.ServerFacts(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
 			return devreach.Facts{}, err
 		}
@@ -545,10 +554,10 @@ func documentServer(
 		}
 		return facts, nil
 	case !opts.SkipUnusedDevURL:
-		_, err := devreach.Server(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout)
+		_, err := devreach.Server(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout)
 		return devreach.Facts{}, err
 	case asksDevServer:
-		return devServerVersion(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, opts.Diagnostics, resolve), nil
+		return devServerVersion(ctx, dialect, opts.urlNames(), opts.DevURL, opts.ConnectTimeout, opts.Diagnostics, resolve), nil
 	}
 	return devreach.Facts{}, nil
 }
@@ -557,11 +566,17 @@ func documentServer(
 // gave it: the dev database named in the project file where a native command
 // took it from there ([DiffOptions.SkipUnusedDevURL]), and --dev-url, the
 // flag or its variable, otherwise.
-func (opts DiffOptions) devURLSource() string {
+func (opts DiffOptions) devURLSource() urlname.Source {
 	if opts.SkipUnusedDevURL {
-		return "the dev database named in the project file"
+		return urlname.ProjectDev()
 	}
-	return "--dev-url"
+	return urlname.Flag("--dev-url")
+}
+
+// urlNames names the dev URL of a diff as [DiffOptions.devURLSource] does. A
+// diff has no target URL, so its target keeps the default name.
+func (opts DiffOptions) urlNames() urlname.Names {
+	return urlname.Names{Dev: opts.devURLSource()}
 }
 
 // devAnswersNamesError says that two documents planned for dialect are
@@ -587,7 +602,9 @@ func devAnswersNamesError(dialect string, err error) error {
 // given for the run.
 func devServerVersion(
 	ctx context.Context,
-	dialect, source, devURL string,
+	dialect string,
+	names urlname.Names,
+	devURL string,
 	timeout time.Duration,
 	diagnostics io.Writer,
 	resolve devreach.Resolve,
@@ -595,7 +612,7 @@ func devServerVersion(
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
-	facts, err := devreach.ServerFacts(ctx, dialect, source, devURL, timeout, resolve)
+	facts, err := devreach.ServerFacts(ctx, dialect, names, devURL, timeout, resolve)
 	if err != nil {
 		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
@@ -851,6 +868,7 @@ func diffResolvedStates(
 	if !diff.HasChanges() {
 		ReportOmitted(opts.Diagnostics, omitted)
 	}
+	noteOneSchemaReads(opts, dialect, fromState, toState)
 	return comparedDiff{
 		compared: compared,
 		diff:     diff,
@@ -936,6 +954,86 @@ func diffComparisonLimits(fromState, toState atlassource.State, from, to *catalo
 		}
 	}
 	return limits
+}
+
+// oneSchemaRead is a database side of a diff read at one schema of a database
+// that may hold others: side is its flag, schema the schema it was read at,
+// and beyond the schemas the other side, other, names that it was not read at.
+type oneSchemaRead struct {
+	side, other, schema string
+	beyond              []string
+}
+
+// oneSchemaReads names each database side of a diff read at one schema of a
+// database that may hold others, on an engine whose desired state declares
+// schemas ([descriptor.Comparison.DeclaredSchemas]) but whose URL selects no
+// scope wider than one schema ([descriptor.Schemas.Selection] unset), when the
+// run named no schemas. SQL Server is such an engine: a URL is read at the
+// schema its schema parameter names, or else at the default schema of the
+// connection's user, and the other schemas of the database are not compared.
+// Measured on SQL Server 2025, a --from database holding app.t1 beside a --to
+// file declaring app.t1 plans CREATE TABLE [app].[t1], which fails on that
+// database.
+func oneSchemaReads(dialect string, requested []string, fromState, toState atlassource.State) []oneSchemaRead {
+	described, ok := platform.Lookup(dialect)
+	if !ok || len(requested) > 0 || !described.Comparison.DeclaredSchemas || described.Schemas.Selection != "" {
+		return nil
+	}
+	var reads []oneSchemaRead
+	for _, side := range []struct {
+		name, otherName string
+		state, other    atlassource.State
+	}{
+		{name: "--from", otherName: "--to", state: fromState, other: toState},
+		{name: "--to", otherName: "--from", state: toState, other: fromState},
+	} {
+		state := side.state
+		if state.Kind != atlassource.KindDatabase || state.RealmScoped || state.WholeServer || state.DefaultSchema == "" {
+			continue
+		}
+		read := oneSchemaRead{side: side.name, other: side.otherName, schema: state.DefaultSchema}
+		// A declaration DeclaredSchemaNames cannot read names no schema here;
+		// the comparison that follows refuses it.
+		declared, _ := schemascope.DeclaredSchemaNames(side.other.Schema)
+		for _, name := range declared {
+			if !strings.EqualFold(name, state.DefaultSchema) {
+				read.beyond = append(read.beyond, name)
+			}
+		}
+		reads = append(reads, read)
+	}
+	return reads
+}
+
+// noteOneSchemaReads reports the database sides of a diff read at one schema
+// ([oneSchemaReads]) to opts.Diagnostics where opts.NoteOneSchemaReads asks
+// for it.
+func noteOneSchemaReads(opts DiffOptions, dialect string, fromState, toState atlassource.State) {
+	if opts.NoteOneSchemaReads {
+		reportOneSchemaReads(opts.Diagnostics, oneSchemaReads(dialect, opts.Schemas, fromState, toState))
+	}
+}
+
+// reportOneSchemaReads writes a note to diagnostics, which may be nil, for
+// each of reads: the schema it was read at, and the schemas the other side
+// declares beyond it, whose objects the plan reads as absent.
+func reportOneSchemaReads(diagnostics io.Writer, reads []oneSchemaRead) {
+	if diagnostics == nil {
+		return
+	}
+	for _, read := range reads {
+		note := fmt.Sprintf("Note: the %s database was read at schema %q alone; pass --schemas to compare others",
+			read.side, read.schema)
+		if len(read.beyond) > 0 {
+			quoted := make([]string, 0, len(read.beyond))
+			for _, name := range read.beyond {
+				quoted = append(quoted, strconv.Quote(name))
+			}
+			note += fmt.Sprintf(". %s declares objects in %s, which this diff compares as absent from the database",
+				read.other, strings.Join(quoted, ", "))
+		}
+		fmt.Fprintln(diagnostics, note+".")
+	}
 }
 
 // plannedDiffChanges is the statements of diff's plan, each carrying the comment
@@ -1545,10 +1643,10 @@ func resolveDiffSource(
 }
 
 type preparedDiffSources struct {
-	from        atlassource.Set
-	to          atlassource.Set
-	dialect     string
-	dialectFlag string
+	from          atlassource.Set
+	to            atlassource.Set
+	dialect       string
+	dialectSource urlname.Source
 }
 
 func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSources, error) {
@@ -1605,7 +1703,7 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 			return preparedDiffSources{}, fmt.Errorf("%s: %w", opts.devURLSource(), err)
 		}
 	}
-	dialect, dialectFlag, err := atlassource.PinDialect(ctx, opts.DevURL, fromSet, toSet)
+	dialect, dialectSource, err := atlassource.PinDialect(ctx, opts.DevURL, opts.devURLSource(), fromSet, toSet)
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
@@ -1613,10 +1711,10 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 		return preparedDiffSources{}, ErrDevURLRequired
 	}
 	return preparedDiffSources{
-		from:        fromSet,
-		to:          toSet,
-		dialect:     dialect,
-		dialectFlag: dialectFlag,
+		from:          fromSet,
+		to:            toSet,
+		dialect:       dialect,
+		dialectSource: dialectSource,
 	}, nil
 }
 
@@ -1732,7 +1830,7 @@ func preparedDiffSides(
 	sides devServerSides,
 	opts DiffOptions,
 ) (diffSides, error) {
-	from, to, err := scopedDiffSides(ctx, conn, opts.Runtime, from, to, dialect, sides, opts.devURLSource(), opts.DevURL)
+	from, to, err := scopedDiffSides(ctx, conn, opts.Runtime, from, to, dialect, sides, opts.devURLSource().String(), opts.DevURL)
 	if err != nil {
 		return diffSides{}, err
 	}

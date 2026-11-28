@@ -55,3 +55,58 @@ func TestExecText_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestExecLiteral_HappyPath reads where the literal's value stands in the
+// statement: the range inside the quotes, past any space before the EXEC, and
+// the offset of each position of the text, which moves one byte further for
+// each quote the literal doubles before it.
+func TestExecLiteral_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		text      string
+		raw       string
+		offsets   []int
+		want      []int
+	}{
+		{
+			name: "EXEC with parentheses", statement: "EXEC(N'DROP TABLE dbo.x');",
+			text: "DROP TABLE dbo.x", raw: "DROP TABLE dbo.x", offsets: []int{0, 5, 16}, want: []int{7, 12, 23},
+		},
+		{
+			name: "sp_executesql after a space", statement: "  EXEC sp_executesql N'TRUNCATE TABLE t'",
+			text: "TRUNCATE TABLE t", raw: "TRUNCATE TABLE t", offsets: []int{0, 16}, want: []int{23, 39},
+		},
+		{
+			name: "a doubled quote", statement: "EXEC('SELECT ''a''; DROP TABLE t')",
+			text: "SELECT 'a'; DROP TABLE t", raw: "SELECT ''a''; DROP TABLE t", offsets: []int{0, 7, 9, 12, 24}, want: []int{6, 13, 16, 20, 32},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			literal, ok := sqlserverbatch.ExecLiteral(test.statement)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(literal.Text, qt.Equals, test.text)
+			c.Assert(test.statement[literal.Start:literal.End], qt.Equals, test.raw)
+			got := make([]int, 0, len(test.offsets))
+			for _, offset := range test.offsets {
+				got = append(got, literal.Offset(offset))
+			}
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestExecLiteral_FailurePath reads no literal where the EXEC runs text the
+// server computes.
+func TestExecLiteral_FailurePath(t *testing.T) {
+	for _, statement := range []string{"EXEC(@sql)", "EXEC(N'SELECT 1' + N'')", "DROP TABLE t"} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			literal, ok := sqlserverbatch.ExecLiteral(statement)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(literal, qt.Equals, sqlserverbatch.Literal{})
+		})
+	}
+}

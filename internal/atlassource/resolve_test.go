@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migratesum"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -46,8 +47,8 @@ func TestResolve_DatabaseSourceIntrospectsLiveSchema(t *testing.T) {
 	set := classifySingle(t, "--from", url)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--dev-url",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--dev-url"),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -73,8 +74,8 @@ func TestResolve_DatabaseSourceCarriesTheServersIdentifierRules(t *testing.T) {
 	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	state, err := classifySingle(t, "--to", url).Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--dev-url",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--dev-url"),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -94,8 +95,8 @@ func TestResolve_DatabaseSourceCarriesItsAddress(t *testing.T) {
 	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	state, err := classifySingle(t, "--to", url).Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--dev-url",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--dev-url"),
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -109,8 +110,8 @@ func TestResolve_DatabaseSourceDialectMismatchFailsBeforeConnecting(t *testing.T
 	set := classifySingle(t, "--to", "postgres://localhost:1/never")
 
 	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--url",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--url"),
 	})
 
 	c.Assert(err, qt.ErrorMatches, `--to database dialect "postgres" does not match --url dialect "sqlite"`)
@@ -123,9 +124,9 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	set := classifySingle(t, "--to", "file://"+dir)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--url",
-		DevURL:      devURL,
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--url"),
+		DevURL:        devURL,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -205,9 +206,9 @@ func TestResolve_MigrationDirRejectsDevDialectMismatch(t *testing.T) {
 	set := classifySingle(t, "--to", "file://"+dir)
 
 	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--from",
-		DevURL:      "postgres://localhost:1/dev",
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--from"),
+		DevURL:        "postgres://localhost:1/dev",
 	})
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --from dialect "sqlite"`)
@@ -380,10 +381,10 @@ func TestResolve_MigrationDirRefusesADevDatabaseThatIsProtected(t *testing.T) {
 	set := classifySingle(t, "--to", "file://"+dir)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--url",
-		DevURL:      devURL,
-		Protected:   []devlock.Protected{{URL: devURL, Refusal: errDevIsProtected}},
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--url"),
+		DevURL:        devURL,
+		Protected:     []devlock.Protected{{URL: devURL, Refusal: errDevIsProtected}},
 	})
 
 	c.Assert(err, qt.ErrorIs, errDevIsProtected)
@@ -406,10 +407,10 @@ func TestResolve_MigrationDirReplaysBesideAProtectedDatabase(t *testing.T) {
 	set := classifySingle(t, "--to", "file://"+dir)
 
 	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
-		Dialect:     "sqlite",
-		DialectFlag: "--url",
-		DevURL:      devURL,
-		Protected:   []devlock.Protected{{URL: protectedURL, Refusal: errDevIsProtected}},
+		Dialect:       "sqlite",
+		DialectSource: urlname.Flag("--url"),
+		DevURL:        devURL,
+		Protected:     []devlock.Protected{{URL: protectedURL, Refusal: errDevIsProtected}},
 	})
 
 	c.Assert(err, qt.IsNil)

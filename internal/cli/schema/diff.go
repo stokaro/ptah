@@ -202,6 +202,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		Policy:              policy,
 		ConnectTimeout:      connectTimeout,
 		Diagnostics:         cmd.ErrOrStderr(),
+		NoteOneSchemaReads:  true,
 		DevServerDisposable: devServerDisposable,
 	})
 	if errors.Is(err, atlasschema.ErrDevURLRequired) {

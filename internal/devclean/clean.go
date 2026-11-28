@@ -166,6 +166,12 @@ type Baseline struct {
 	// survivorsRecorded reports that it did; see [Baseline.Survivors].
 	survivors         dbreset.Survivors
 	survivorsRecorded bool
+	// databaseRoles are the SQL Server database roles the database held at
+	// the claim, and databaseRolesRecorded reports that the claim listed
+	// them through a writer that drops the ones added since; see
+	// [Baseline.DatabaseRoles].
+	databaseRoles         []string
+	databaseRolesRecorded bool
 }
 
 // RolesAtClaim returns the roles the dev server held at the claim, sorted, on
@@ -243,6 +249,13 @@ type survivorReader interface {
 
 type schemaStateReader interface {
 	SchemaStates(context.Context) ([]dbreset.SchemaState, error)
+}
+
+// databaseRoleReader is a writer that lists the database roles of its
+// database, and whose realm reset drops the ones a claim did not find; see
+// [Baseline.DatabaseRoles].
+type databaseRoleReader interface {
+	DatabaseRoles(context.Context) ([]string, error)
 }
 
 type databaseRealmKeeper interface {
@@ -335,7 +348,27 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 		}
 		baseline.survivors, baseline.survivorsRecorded = survivors, recorded
 	}
+	if err := baseline.recordDatabaseRoles(ctx, writer); err != nil {
+		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+	}
 	return baseline, nil
+}
+
+// recordDatabaseRoles records the database roles the database holds, through
+// a writer that lists them, on a claim whose reset empties the realm: only a
+// realm reset drops the roles a claim did not find, so a claim of anything
+// less records none; see [Baseline.DatabaseRoles].
+func (b *Baseline) recordDatabaseRoles(ctx context.Context, writer catalog.SchemaWriter) error {
+	reader, ok := writer.(databaseRoleReader)
+	if !ok || !b.realm {
+		return nil
+	}
+	roles, err := reader.DatabaseRoles(ctx)
+	if err != nil {
+		return err
+	}
+	b.databaseRoles, b.databaseRolesRecorded = roles, true
+	return nil
 }
 
 // recordArtifacts records the database-scoped objects the database holds,
@@ -376,6 +409,18 @@ func (b Baseline) Publications() replay.PublicationScope {
 		}
 	}
 	return scope
+}
+
+// DatabaseRoles is what every reset of the run does with the dev database's
+// SQL Server database roles, for [ReplayGuard.WithDatabaseRoles]. A realm
+// reset drops each database role the claim did not find once the claim listed
+// them, and keeps the ones it found. A claim that did not list them, and a
+// reset of the one schema a URL pinned, drop none.
+func (b Baseline) DatabaseRoles() replay.DatabaseRoleScope {
+	if !b.databaseRolesRecorded {
+		return replay.DatabaseRoleScope{}
+	}
+	return replay.DatabaseRoleScope{Dropped: true, Kept: slices.Clone(b.databaseRoles)}
 }
 
 // Survivors names the extensions and schemas that outlive every reset of the
@@ -617,5 +662,8 @@ func (b Baseline) kept() dbreset.Kept {
 		Server:            b.server,
 		StartingPoint:     b.startingPoint,
 		SchemaStates:      b.schemaStates,
+
+		DatabaseRoles:         b.databaseRoles,
+		DatabaseRolesRecorded: b.databaseRolesRecorded,
 	}
 }

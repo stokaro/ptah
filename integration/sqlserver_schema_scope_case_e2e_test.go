@@ -229,10 +229,10 @@ func routineBodies(c *qt.C, dbURL string) string {
 }
 
 // For an account whose default schema is not dbo, a routine the schema
-// declares without a schema is the one the read finds in dbo, and the plan
-// replaces that routine by its qualified name. The account's own schema holds
-// a routine of the same name, which the plan does not name and the apply
-// leaves as it is.
+// declares without a schema is the one in that default schema, where the
+// server creates a name written without one, and the plan replaces that
+// routine by its qualified name. dbo holds a routine of the same name, which
+// the plan does not name and the apply leaves as it is.
 func TestSchemaApplySQLServerRoutineReplacementForAnAccountOutsideDboE2E(t *testing.T) {
 	c := qt.New(t)
 	dbURL := sqlServerCollatedDatabase(c, "Latin1_General_100_CI_AS")
@@ -256,10 +256,10 @@ func TestSchemaApplySQLServerRoutineReplacementForAnAccountOutsideDboE2E(t *test
 	again := apply()
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stdout, qt.Contains, "DROP FUNCTION [dbo].[f];")
-	c.Assert(applied.Stdout, qt.Contains, "CREATE OR ALTER FUNCTION [dbo].[f]()")
+	c.Assert(applied.Stdout, qt.Contains, "DROP FUNCTION [app].[f];")
+	c.Assert(applied.Stdout, qt.Contains, "CREATE OR ALTER FUNCTION [app].[f]()")
 	c.Assert(applied.Stdout, qt.Not(qt.Matches), `(?s).*FUNCTION (IF EXISTS )?\[f\].*`)
-	c.Assert(routineBodies(c, dbURL), qt.Equals, "app.f:2,dbo.f:5")
+	c.Assert(routineBodies(c, dbURL), qt.Equals, "app.f:5,dbo.f:1")
 	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 }

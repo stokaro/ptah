@@ -337,6 +337,10 @@ func compareReportingUndecidedAdditions(
 
 	restoreAuthored(diff, authored)
 
+	if err := refuseCreatesBesideKeptNamesakes(diff, database, opts.Dialect, identifierSemantics); err != nil {
+		return nil, Diagnostics{}, err
+	}
+
 	// Last, because it reads the whole plan: an object the effective desired
 	// state keeps must not bind what any comparator above drops. It reports
 	// cancellation too.

@@ -119,8 +119,10 @@ before emitting SQL where it cannot tell two names apart:
   name part by part, schema and object name. A target collation may equate
   them by case, accent, locale, kana, or width.
 - Objects of two kinds that share a schema's namespace, tables, views,
-  functions, procedures and sequences, whose names may be one. Two ASCII names
-  that differ beyond case are two names here.
+  functions, procedures, sequences, constraints and triggers, whose names may
+  be one, and two constraints or two triggers of two tables whose names may be
+  one. A constraint and a trigger are in the schema of their table. Two ASCII
+  names that differ beyond case are two names here.
 - Identifier semantics that are neither the offline rules nor a snapshot a
   connection resolved, because they say which names are one by a rule SQL
   Server does not follow.

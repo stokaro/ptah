@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlsafety"
 	"ptah.run/internal/txrequire"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -211,6 +212,10 @@ type PlanFileOptions struct {
 	// sets it for a URL taken from the project file rather than given for the
 	// run.
 	SkipUnusedDevURL bool
+	// Names says how an error names the target and dev database URLs, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names urlname.Names
 	// ConnectTimeout bounds opening DevURL. Zero leaves the caller's context
 	// deadline unchanged.
 	ConnectTimeout time.Duration
@@ -342,7 +347,7 @@ func PreparePlanFileReportingUndecided(
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
-	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect, opts.Names); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	// A saved plan reads the dev URL for its schema and nothing else, and the
@@ -350,7 +355,7 @@ func PreparePlanFileReportingUndecided(
 	// answers on fails the run here rather than the run that applies the plan;
 	// see [devreach].
 	if !opts.SkipUnusedDevURL {
-		if _, err := devreach.Server(ctx, conn.Info().Dialect, "--dev-url", opts.DevURL, opts.ConnectTimeout); err != nil {
+		if _, err := devreach.Server(ctx, conn.Info().Dialect, opts.Names, opts.DevURL, opts.ConnectTimeout); err != nil {
 			return PlanFile{}, schemadiff.Diagnostics{}, err
 		}
 	}

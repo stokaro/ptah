@@ -5556,7 +5556,13 @@ in place of a dialect's name:
   namespace in a schema, as an `ObjectNamespace`. A declaration that gives two
   of them names the server may read as one is refused, and so is a plan that
   creates an object of one kind and drops one of another under such a name.
-  SQL Server states tables, views, routines and sequences. A synonym is in
+  SQL Server states tables, views, routines, sequences, constraints and
+  triggers; a constraint or a trigger is in the schema of its table, two
+  constraints or two triggers of two tables are compared with each other, and
+  a constraint the database holds and the plan keeps is compared with each
+  object the plan creates. A plan that moves a constraint to another table
+  under its name is refused too, since it adds the constraint before it drops
+  the old one. A synonym is in
   that namespace on SQL Server too, and the checks do not read it, since a
   feature owner holds it; a plan that names one like another object fails on
   the server.

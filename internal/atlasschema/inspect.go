@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/timescale"
 	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/unreadtables"
+	"ptah.run/internal/urlname"
 )
 
 // InspectRuntime supplies conversion, reporting, and schema rendering through
@@ -54,6 +55,10 @@ type InspectOptions struct {
 	// Runtime selects required feature conversion and reporting services.
 	Runtime InspectRuntime
 	DevURL  string
+	// Names says how an error names the inspected URL and the dev URL, the
+	// way the operator gave them. The zero value names them --url and
+	// --dev-url; see [urlname.Names].
+	Names   urlname.Names
 	Schemas []string
 	// Include positively selects the top-level resources inspection keeps,
 	// with the same Atlas-style selectors [atlasfilter.Scope] applies to
@@ -149,7 +154,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if conn == nil {
 		return InspectResult{}, errors.New("schema inspect requires database connection")
 	}
-	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect, opts.Names); err != nil {
 		return InspectResult{}, err
 	}
 

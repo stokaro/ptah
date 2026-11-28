@@ -56,6 +56,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/urlname"
 )
 
 // Kind classifies one desired-state source URL. The values read naturally in
@@ -649,30 +650,32 @@ func (s Set) ImpliedDialect() string {
 }
 
 // PinDialect determines the SQL dialect shared by the dev database and all
-// database desired-state sources. Precedence is deterministic: --dev-url pins
-// first, then each set in argument order. Every later database source must
-// match the pinned dialect as atlasurl.SchemeDialectMatches compares them,
-// since every dialect here is read from a URL scheme. The returned flag names the pinning source for
-// error messages; the dialect is empty when nothing pins one. A dev URL of an
+// database desired-state sources. Precedence is deterministic: the dev URL
+// pins first, then each set in argument order. Every later database source
+// must match the pinned dialect as atlasurl.SchemeDialectMatches compares
+// them, since every dialect here is read from a URL scheme. dev names the dev
+// URL, --dev-url where it is the zero value, and the returned source names
+// the pinning source for error messages; the dialect is empty when nothing
+// pins one. A dev URL of an
 // engine only a provider serves pins the provider's target, as the selection
 // on ctx names it.
-func PinDialect(ctx context.Context, devURL string, sets ...Set) (dialect, pinnedBy string, err error) {
+func PinDialect(ctx context.Context, devURL string, dev urlname.Source, sets ...Set) (dialect string, pinnedBy urlname.Source, err error) {
 	dialect, err = providerurl.Dialect(ctx, devURL)
 	if err != nil {
-		return "", "", err
+		return "", urlname.Source{}, err
 	}
-	pinnedBy = "--dev-url"
+	pinnedBy = dev.Or(urlname.Flag("--dev-url"))
 	for _, set := range sets {
 		implied := set.ImpliedDialect()
 		if implied == "" {
 			continue
 		}
 		if dialect == "" {
-			dialect, pinnedBy = implied, set.Flag
+			dialect, pinnedBy = implied, urlname.Flag(set.Flag)
 			continue
 		}
 		if !atlasurl.SchemeDialectMatches(implied, dialect) {
-			return "", "", fmt.Errorf("%s database dialect %q does not match %s dialect %q", set.Flag, implied, pinnedBy, dialect)
+			return "", urlname.Source{}, fmt.Errorf("%s database dialect %q does not match %s", set.Flag, implied, pinnedBy.Attribute("dialect", dialect))
 		}
 	}
 	return dialect, pinnedBy, nil

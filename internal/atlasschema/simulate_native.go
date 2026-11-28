@@ -69,7 +69,7 @@ func (p ApplyRuntimePlan) simulateNativeOnDev(ctx context.Context, opts Simulate
 	if !ok {
 		return errors.New("schema apply simulation of native operations requires their assessment")
 	}
-	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs)
+	dev, err := connectSimulationDev(ctx, opts.DevURL, opts.DevServerDisposable, p.conn, opts.TargetURL, opts.DesiredURLs, opts.Names)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,9 @@ func (p ApplyRuntimePlan) planOnDev(
 	if err != nil {
 		return ApplyPlan{}, err
 	}
-	if err := guardRehearsedUnits(plan.units, guard.WithPublications(baseline.Publications).WithSurvivors(baseline.Survivors), devConn); err != nil {
+	guard = guard.WithPublications(baseline.Publications).WithSurvivors(baseline.Survivors).
+		WithDatabaseRoles(baseline.DatabaseRoles)
+	if err := guardRehearsedUnits(plan.units, guard, devConn); err != nil {
 		return ApplyPlan{}, err
 	}
 	return plan, nil

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planrefusal"
+	"ptah.run/internal/urlname"
 )
 
 // realmInfo describes a PostgreSQL connection whose URL adds query and whose
@@ -72,7 +73,7 @@ func TestCheckSimulationSchemaScope_HappyPath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(checkSimulationSchemaScope(test.dev, test.target), qt.IsNil)
+			c.Assert(checkSimulationSchemaScope(test.dev, test.target, urlname.Names{}), qt.IsNil)
 		})
 	}
 }
@@ -99,7 +100,7 @@ func TestCheckSimulationSchemaScope_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(checkSimulationSchemaScope(test.dev, test.target), qt.ErrorMatches, test.want)
+			c.Assert(checkSimulationSchemaScope(test.dev, test.target, urlname.Names{}), qt.ErrorMatches, test.want)
 		})
 	}
 }

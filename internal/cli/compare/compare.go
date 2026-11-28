@@ -47,6 +47,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/urlname"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -512,7 +513,8 @@ func resolveGeneratedExpressions(
 	if len(probes) == 0 {
 		// Nothing needs asking, and a --dev-url that was given is still
 		// opened, so one nothing answers on fails the run; see [devreach].
-		_, err := devreach.Server(ctx, info.Dialect, "--"+devURLFlag, opts.devURL, connectTimeout)
+		names := urlname.Names{Target: urlname.Flag("--" + dbURLFlag), Dev: urlname.Flag("--" + devURLFlag)}
+		_, err := devreach.Server(ctx, info.Dialect, names, opts.devURL, connectTimeout)
 		return nil, err
 	}
 	if strings.TrimSpace(opts.devURL) == "" {
