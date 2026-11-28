@@ -173,3 +173,16 @@ func TestScopeDatabase_RecordsAKindTheIncludeLeavesUnread(t *testing.T) {
 	})
 	c.Assert(filtered.TableRemovalBlockers, qt.IsNil)
 }
+
+// A refusal names an object the read found ahead of a kind the read left out,
+// whatever their names: the object says what the drop would remove.
+func TestScopeDatabase_NamesAnObjectAheadOfAnUnreadKind(t *testing.T) {
+	c := qt.New(t)
+	filtered, err := atlasfilter.ScopeDatabase(tableWithChildren(), atlasfilter.Scope{
+		Selections: ownerSelections(), Exclude: []string{"*[type=function]", "app.t"}, RealmRelativePatterns: true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(filtered.SchemaRemovalBlockers, qt.DeepEquals, map[string]catalog.SelectionBlocker{
+		"app": {Object: "table app.t", Cause: catalog.SelectionExcluded, Pattern: "app"},
+	})
+}
