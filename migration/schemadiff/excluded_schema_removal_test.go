@@ -200,10 +200,17 @@ func TestCompareWithDatabaseInfo_BlocksTheDropOfATableWithAnExcludedChild(t *tes
 func TestCompareWithDatabaseInfo_LeavesEveryPartOfABlockedTable(t *testing.T) {
 	for _, test := range []struct {
 		dialect, schema, exclude, table, pattern string
+		databases                                []string
 		realm, wholeServer                       bool
 	}{
-		{dialect: platform.MySQL, schema: "app", exclude: "app.u.c", table: "app.u", pattern: "app.u", realm: true, wholeServer: true},
-		{dialect: platform.MariaDB, schema: "app", exclude: "app.u.c", table: "app.u", pattern: "app.u", realm: true, wholeServer: true},
+		{
+			dialect: platform.MySQL, schema: "app", databases: []string{"app"}, exclude: "app.u.c", table: "app.u", pattern: "app.u",
+			realm: true, wholeServer: true,
+		},
+		{
+			dialect: platform.MariaDB, schema: "app", databases: []string{"app"}, exclude: "app.u.c", table: "app.u", pattern: "app.u",
+			realm: true, wholeServer: true,
+		},
 		{dialect: platform.MySQL, exclude: "u.c", table: "u", pattern: "u"},
 		{dialect: platform.Postgres, schema: "public", exclude: "u.c", table: "public.u", pattern: "u"},
 		{dialect: platform.SQLServer, schema: "dbo", exclude: "u.c", table: "dbo.u", pattern: "u"},
@@ -244,9 +251,9 @@ func TestCompareWithDatabaseInfo_LeavesEveryPartOfABlockedTable(t *testing.T) {
 				// the grant on u would be revoked.
 				Roles: []schemamodel.Role{{Name: "reader", Inherit: true}},
 			}
-			if test.wholeServer {
-				current.Schemas = []catalog.Schema{{Name: test.schema}}
-				desired.Schemas = []schemamodel.Schema{{Name: test.schema}}
+			for _, name := range test.databases {
+				current.Schemas = append(current.Schemas, catalog.Schema{Name: name})
+				desired.Schemas = append(desired.Schemas, schemamodel.Schema{Name: name})
 			}
 			filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
 				Selections: runtime.Selections(), Dialect: test.dialect, RealmRelativePatterns: test.realm, Exclude: []string{test.exclude},
