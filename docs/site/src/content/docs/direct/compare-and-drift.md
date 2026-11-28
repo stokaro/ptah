@@ -670,39 +670,6 @@ CI check reads the same fields either way. Within `changes`, a collection with
 no members encodes as `null` or `[]` — read both as empty. `format_version`
 rises when a field's meaning changes, not when one is added.
 
-A drop the comparison withholds, because the database or the table holds an
-object the selection leaves out, is listed under `removals_blocked` in
-`changes`. `statements` has no statement for it, and no other key of `changes`
-names the table or any of its parts. The `schema drift --format json` report
-carries the same list in its `diff`, and its findings count it under the same
-name:
-
-```json
-"removals_blocked": [
-  {
-    "kind": "table",
-    "name": "u",
-    "blocked_by": {"object": "column app.u.c", "cause": "excluded", "pattern": "u"}
-  }
-]
-```
-
-`kind` is `table` or `database`, and `name` is spelled as the `DROP` would
-name it. `blocked_by.object` names what the drop would remove, as the warning
-does. `cause` says how the selection left it out:
-
-- `excluded`: an `--exclude` pattern names the object;
-- `not-included`: no `--include` pattern selects it;
-- `kind-excluded`: an `--exclude` pattern leaves the whole kind out of the
-  read, `object` names the kind, such as `triggers`, and `selector` quotes the
-  pattern;
-- `kind-not-included`: no `--include` pattern can select the kind, and `object`
-  names the kind.
-
-`pattern` names the database or the table as a selector on this run spells
-it, which is the spelling the remedies in the warning quote. `selector` and
-`pattern` are left out when empty.
-
 A change an engine-specific setting owns, such as a ClickHouse TTL or a YDB
 coordination node's settings, appears under `feature_changes`: at the top of
 `changes` for a standalone object, inside the table's entry in

@@ -411,7 +411,7 @@ A drop that would remove an object the selection leaves out is not planned. A
 table the desired schema does not declare stays while it holds an excluded
 column, index, constraint or trigger, and a MySQL or MariaDB database stays
 while it holds an excluded object. `schema drift` counts each such drop under
-`removals_blocked`, and `schema compare` and `schema diff` print a warning that
+[`removals_blocked`](../drift-findings/#blocked-drops), and `schema compare` and `schema diff` print a warning that
 names the object and the ways out. The table stays as the database holds it,
 so no key, index, constraint or trigger of it reaches the SQL or the findings
 either. `schema apply`, `schema plan`, `migrations plan` and `migrations
