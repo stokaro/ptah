@@ -9,13 +9,26 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/connector"
+	"ptah.run/internal/mysqlsystemdb"
 )
 
 // indexNameProbe asks a MySQL-family server which index names collide, on the
 // connection the caller resolves through.
 type indexNameProbe struct {
 	executor connector.Executor
+	// table is the probe's temporary table, quoted, and qualified with a
+	// database on a connection that selects none.
+	table string
 }
+
+// probeTableName is the name of the probe's temporary table.
+const probeTableName = "ptah_index_name_probe"
+
+// primaryKeyName is the name the server gives a primary key's index. It
+// refuses it as the name of any other key, in any letter case, with
+// `ERROR 1280 (42000): Incorrect index name 'primary'`, measured on MySQL
+// 8.4.13 and MariaDB 11.8.9.
+const primaryKeyName = "PRIMARY"
 
 // mysqlProbeKeyLimit is how many keys one table may carry, so it is how many
 // names one probe statement can ask about.
@@ -41,6 +54,12 @@ const mysqlProbeKeyLimit = 64
 // answered and a schema carrying no other kind reaches no server at all --
 // which is every ordinary schema, and the reason this costs nothing in the
 // common case (stokaro/ptah#2768).
+//
+// PRIMARY is not paired with the other names either. It is the name of every
+// primary key's index, and no other key may take it, so the server cannot be
+// asked about it and no other index name pairs with it. On a connection to a
+// whole server, the probe's table is created in a database the server holds;
+// see [probeTable].
 func resolveIndexNames(
 	ctx context.Context,
 	executor connector.Executor,
@@ -61,11 +80,66 @@ func resolveIndexNames(
 			len(beyondASCII), mysqlProbeKeyLimit)
 	}
 
+	table, held, err := probeTable(ctx, executor, info, candidates)
+	if err != nil {
+		return identifier.Semantics{}, err
+	}
+	if !held {
+		return offline, nil
+	}
 	classes := newNameClasses(candidates)
-	if err := (indexNameProbe{executor: executor}).chunks(ctx, candidates, beyondASCII, classes); err != nil {
+	asked := slices.DeleteFunc(slices.Clone(candidates), func(name string) bool {
+		return isASCIIName(name) && strings.EqualFold(name, primaryKeyName)
+	})
+	if err := (indexNameProbe{executor: executor, table: table}).chunks(ctx, asked, beyondASCII, classes); err != nil {
 		return identifier.Semantics{}, err
 	}
 	return identifier.ForMySQLFamilyResolvedIndexNames(info.Dialect, classes.resolved()), nil
+}
+
+// probeTable is the probe's temporary table, as a statement names it.
+//
+// A connection that selects a database creates it there. A connection to a
+// whole server selects none, and an unqualified CREATE TEMPORARY TABLE fails
+// on it with `Error 1046 (3D000): No database selected`, so the table goes in
+// a database the server holds and the comparison names among names: the first
+// in byte order, so every run picks the same one. A temporary table is the
+// session's alone whatever database holds it, and a key name is unique per
+// table, so which database it is changes no answer. held is false when the
+// server holds no database the comparison names: the comparison then pairs no
+// index the server holds, and Ptah's own folding answers for the names of
+// the indexes it would create.
+func probeTable(
+	ctx context.Context,
+	executor connector.Executor,
+	info catalog.ServerInfo,
+	names []string,
+) (table string, held bool, err error) {
+	if !info.WholeServer || info.Schema != "" {
+		return quoteMySQLIdentifier(probeTableName), true, nil
+	}
+	rows, err := executor.QueryContext(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA")
+	if err != nil {
+		return "", false, fmt.Errorf("resolve MySQL-family index names: list the databases: %w", err)
+	}
+	defer rows.Close()
+	var databases []string
+	for rows.Next() {
+		var database string
+		if err := rows.Scan(&database); err != nil {
+			return "", false, fmt.Errorf("resolve MySQL-family index names: list the databases: %w", err)
+		}
+		if slices.Contains(names, database) && !mysqlsystemdb.IsMySQLSystemDatabase(database) {
+			databases = append(databases, database)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, fmt.Errorf("resolve MySQL-family index names: list the databases: %w", err)
+	}
+	if len(databases) == 0 {
+		return "", false, nil
+	}
+	return quoteMySQLIdentifier(slices.Min(databases)) + "." + quoteMySQLIdentifier(probeTableName), true, nil
 }
 
 // chunks asks the server about every pairing the offline
@@ -163,18 +237,17 @@ func (p indexNameProbe) keysCoexist(
 		fmt.Fprintf(&columns, "c%d INT", position)
 		fmt.Fprintf(&keys, "KEY %s (c%d)", quoteMySQLIdentifier(name), position)
 	}
-	table := "ptah_index_name_probe"
-	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
+	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS "+p.table); err != nil {
 		return false, fmt.Errorf("resolve MySQL-family index names: clear the probe table: %w", err)
 	}
-	statement := fmt.Sprintf("CREATE TEMPORARY TABLE `%s` (%s, %s)", table, columns.String(), keys.String())
+	statement := fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s, %s)", p.table, columns.String(), keys.String())
 	if _, err := p.executor.ExecContext(ctx, statement); err != nil {
 		if isMySQLDuplicateKeyName(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("resolve MySQL-family index names: ask the server: %w", err)
 	}
-	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS `"+table+"`"); err != nil {
+	if _, err := p.executor.ExecContext(ctx, "DROP TEMPORARY TABLE IF EXISTS "+p.table); err != nil {
 		return false, fmt.Errorf("resolve MySQL-family index names: clear the probe table: %w", err)
 	}
 	return true, nil

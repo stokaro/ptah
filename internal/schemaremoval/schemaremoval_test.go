@@ -188,6 +188,20 @@ func TestRefusalError_NamesTheRemediesOfItsCause(t *testing.T) {
 				`(--exclude old) to leave it alone, or run without that selector to drop it`,
 		},
 		{
+			name: "table a kept table needs",
+			removal: difftypes.BlockedRemoval{Kind: difftypes.BlockedTable, Name: "db.t", NeededBy: "db.u",
+				BlockedBy: catalog.SelectionBlocker{Object: "column db.u.c", Cause: catalog.SelectionExcluded}},
+			want: `cannot drop table "db.t": table "db.u" needs it, and that table stays because the selection blocks a drop; ` +
+				`the refusal of that drop says how to resolve it`,
+		},
+		{
+			name: "function a kept table needs",
+			removal: difftypes.BlockedRemoval{Kind: difftypes.BlockedFunction, Name: "db.trgfn", NeededBy: "db.u",
+				BlockedBy: catalog.SelectionBlocker{Object: "column db.u.c", Cause: catalog.SelectionExcluded}},
+			want: `cannot drop function "db.trgfn": table "db.u" needs it, and that table stays because the selection blocks a drop; ` +
+				`the refusal of that drop says how to resolve it`,
+		},
+		{
 			name: "kind an include leaves unread",
 			removal: difftypes.BlockedRemoval{Kind: difftypes.BlockedDatabase, Name: "db",
 				BlockedBy: catalog.SelectionBlocker{Object: "views", Cause: catalog.SelectionKindNotIncluded}},

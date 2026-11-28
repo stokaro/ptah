@@ -140,6 +140,24 @@ The body runs to the end of its batch: to `GO`, to the `END` that closes a
 not model is refused by name. See
 [SQL Server triggers](../../databases/sqlserver/#triggers).
 
+## A schema on a trigger's name
+
+A trigger is in its table's schema. On MySQL, MariaDB and SQLite the name may
+carry that schema, and a table written without one is read in it:
+
+```sql
+CREATE TRIGGER app.audit_insert BEFORE INSERT ON orders
+FOR EACH ROW SET NEW.created_at = NOW();
+```
+
+declares `audit_insert` on `app.orders`. A table in another schema is refused,
+as MySQL refuses it with `ERROR 1435` and SQLite with `trigger audit_insert
+cannot reference objects in database aux`. The schemas compare byte for byte,
+so `APP.audit_insert ON app.orders` is refused too. PostgreSQL and the other
+engines take no schema on a trigger's name, and a file that writes one is
+refused before anything is planned; write the name alone and qualify the
+table.
+
 ## Add a column after the table
 
 A column can be added with `ALTER TABLE ... ADD COLUMN` in the same file,

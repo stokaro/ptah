@@ -164,7 +164,7 @@ func compareReportingUndecidedAdditions(
 	// A table whose drop the selection blocks leaves the comparison with all
 	// its parts before anything pairs them: the table preparation, the owned
 	// features and every comparator below see the database without it.
-	database = compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics,
+	database, heldDatabases := compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics,
 		compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema))
 	// A key the desired schema declares into a table an exclude selector left
 	// out is compared as the key the server holds, not added again.
@@ -198,7 +198,7 @@ func compareReportingUndecidedAdditions(
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
 
-	compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules)
+	compareSchemaContainers(diff, desired, database, heldDatabases, cov, opts, identifierSemantics, rules)
 
 	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules)
 	if err != nil {
@@ -707,19 +707,20 @@ func comparesServerDatabases(dialect string) bool {
 
 // compareSchemaContainers compares whole-server databases before their
 // contents, then adds declared schemas or namespaces as the target's rules
-// require. A database drop that would remove an object the selection left out
-// is recorded as blocked rather than planned.
+// require. A database drop that would remove an object the selection left out,
+// or a table in heldDatabases, is recorded as blocked rather than planned.
 func compareSchemaContainers(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	heldDatabases compare.HeldDatabases,
 	cov compare.Coverage,
 	opts *config.CompareOptions,
 	semantics identifier.Semantics,
 	rules schemacomparison.Rules,
 ) {
 	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
-		compare.ServerSchemas(diff, desired, database.Schemas, semantics, cov, database.SchemaRemovalBlockers)
+		compare.ServerSchemas(diff, desired, database.Schemas, semantics, cov, database.SchemaRemovalBlockers, heldDatabases)
 	}
 	if comparisons.Get(opts.Dialect).DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)

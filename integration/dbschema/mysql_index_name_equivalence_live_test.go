@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -182,6 +183,120 @@ func TestMySQLLiveIndexNameEquivalence_AnASCIIOnlySchemaAsksNothing(t *testing.T
 			c.Assert(semantics.IndexConflictKey("idx_users_email"), qt.Equals,
 				semantics.IndexConflictKey("IDX_USERS_EMAIL"))
 			c.Assert(semantics.IndexConflictUnresolved("idx_users_email"), qt.IsFalse)
+		})
+	}
+}
+
+// scratchServerDatabase creates an empty database on the server adminURL
+// reaches, dropped when the test ends, and returns its name and the URL naming
+// the whole server.
+func scratchServerDatabase(c *qt.C, adminURL string) (database, server string) {
+	c.Helper()
+	admin, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
+	database = fmt.Sprintf("ptah_probe_%d", time.Now().UnixNano())
+	_, err = admin.ExecContext(c.Context(), "CREATE DATABASE `"+database+"`")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, err := admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS `"+database+"`")
+		c.Check(err, qt.IsNil)
+	})
+	server, err = atlasurl.WithDatabaseName(adminURL, "")
+	c.Assert(err, qt.IsNil)
+	return database, server
+}
+
+// TestMySQLLiveIndexNameEquivalence_AWholeServerAsksInAHeldDatabase resolves
+// names on a connection to a whole server, which selects no database: the
+// probe's table goes in a database the server holds and the names include, and
+// the answer is the server's. Unqualified, the table fails with Error 1046.
+// PRIMARY is among the names, as every comparison of a table with a primary
+// key has it, and is not asked about: the server refuses it as a key name with
+// Error 1280 (stokaro/ptah#6849).
+func TestMySQLLiveIndexNameEquivalence_AWholeServerAsksInAHeldDatabase(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  dbtarget.Engine
+		collide [2]string
+	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin, collide: [2]string{liveDottedCapitalI, "i"}},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin, collide: [2]string{liveDotlessI, "I"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, server := scratchServerDatabase(c, dbtarget.URL(t, test.engine))
+			conn, err := dbschema.ConnectToServer(c.Context(), server)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+
+			semantics, err := conn.ResolveIdentifierSemantics(c.Context(),
+				[]string{database, "PRIMARY", "i", "I", liveDottedCapitalI, liveDotlessI, liveADiaeresis})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(semantics.IndexConflictUnresolved(liveADiaeresis), qt.IsFalse)
+			c.Assert(semantics.IndexConflictKey(test.collide[0]), qt.Equals, semantics.IndexConflictKey(test.collide[1]))
+		})
+	}
+}
+
+// TestMySQLLiveIndexNameEquivalence_AWholeServerWithoutAHeldDatabaseAsksNothing
+// resolves names that include no database the server holds: no index the
+// server holds is compared, so nothing is asked, and a name past ASCII keeps
+// Ptah's own answer, the unresolved key.
+func TestMySQLLiveIndexNameEquivalence_AWholeServerWithoutAHeldDatabaseAsksNothing(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			server, err := atlasurl.WithDatabaseName(dbtarget.URL(t, test.engine), "")
+			c.Assert(err, qt.IsNil)
+			conn, err := dbschema.ConnectToServer(c.Context(), server)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+
+			semantics, err := conn.ResolveIdentifierSemantics(c.Context(),
+				[]string{fmt.Sprintf("ptah_absent_%d", time.Now().UnixNano()), "a", liveADiaeresis})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(semantics.IndexConflictUnresolved(liveADiaeresis), qt.IsTrue)
+		})
+	}
+}
+
+// TestMySQLLiveIndexNameEquivalence_PrimaryIsNotAsked resolves names that
+// include PRIMARY through a connection to one database. The server refuses
+// PRIMARY as the name of a key with Error 1280, so asked about, it fails the
+// whole resolution.
+func TestMySQLLiveIndexNameEquivalence_PrimaryIsNotAsked(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, err := dbschema.ConnectToDatabase(c.Context(), dbtarget.URL(t, test.engine))
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+
+			semantics, err := conn.ResolveIdentifierSemantics(c.Context(), []string{"PRIMARY", "primary", "a", liveADiaeresis})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(semantics.IndexConflictUnresolved(liveADiaeresis), qt.IsFalse)
 		})
 	}
 }

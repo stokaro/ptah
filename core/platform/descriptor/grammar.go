@@ -660,11 +660,18 @@ type RoutineGrammar struct {
 	// TriggerStatementBody reports that a trigger's body may be one statement
 	// rather than a BEGIN ... END block.
 	TriggerStatementBody bool `json:"trigger_statement_body,omitempty"`
+	// TriggerNameSchema reports that a trigger's name may carry a schema,
+	// which is the schema of the trigger and of its table: a table named
+	// without a schema is read in it, and a table in another schema is
+	// refused, as MySQL refuses one with Error 1435. Without it a trigger is
+	// in its table's schema and a schema on its name is refused, as
+	// PostgreSQL refuses one with a syntax error.
+	TriggerNameSchema bool `json:"trigger_name_schema,omitempty"`
 	// Trigger is how CREATE TRIGGER is written: [TriggerTransactSQL], or empty
 	// for the order the other engines share, `CREATE TRIGGER name {BEFORE |
-	// AFTER | INSTEAD OF} events ON table`. TriggerConditions and
-	// TriggerStatementBody refine that order, so a registry refuses either of
-	// them beside [TriggerTransactSQL].
+	// AFTER | INSTEAD OF} events ON table`. TriggerConditions,
+	// TriggerStatementBody and TriggerNameSchema refine that order, so a
+	// registry refuses each of them beside [TriggerTransactSQL].
 	Trigger string `json:"trigger,omitempty"`
 	// DefaultDoBlockLanguage is the language of a DO block that writes no
 	// LANGUAGE clause, in lower case, such as plpgsql. The parser gives such a
@@ -857,6 +864,8 @@ func validateRoutineGrammar(grammar Grammar) error {
 			return fmt.Errorf("trigger conditions are stated, and trigger grammar %q reads no WHEN or REFERENCING", trigger)
 		case grammar.Routines.TriggerStatementBody:
 			return fmt.Errorf("a one-statement trigger body is stated, and trigger grammar %q reads its own body", trigger)
+		case grammar.Routines.TriggerNameSchema:
+			return fmt.Errorf("a schema on a trigger's name is stated, and trigger grammar %q reads its own name", trigger)
 		}
 	}
 	language := grammar.Routines.DefaultDoBlockLanguage

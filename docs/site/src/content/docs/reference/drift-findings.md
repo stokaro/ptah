@@ -157,6 +157,30 @@ does. `cause` says how the selection left it out:
 it, which is the spelling the remedies in the warning quote. `selector` and
 `pattern` are left out when empty.
 
+A blocked table stays as the database holds it, so the comparison does not
+drop what it needs either. A table its foreign key references, a function its
+trigger executes and an enum type one of its columns has are listed too, each
+with `needed_by`, the table that needs it. `kind` is then `table`, `function`
+or `type`, and `blocked_by` is the entry of the drop that keeps that table. A
+table kept this way is followed in turn, and the entries the selection blocks
+come first:
+
+```json
+"removals_blocked": [
+  {
+    "kind": "table",
+    "name": "u",
+    "blocked_by": {"object": "column app.u.c", "cause": "excluded", "pattern": "u"}
+  },
+  {
+    "kind": "table",
+    "name": "t",
+    "blocked_by": {"object": "column app.u.c", "cause": "excluded", "pattern": "u"},
+    "needed_by": "u"
+  }
+]
+```
+
 ## Feature owners, undecided objects and rows
 
 A change a feature owner compares, such as a PostgreSQL extension, policy or

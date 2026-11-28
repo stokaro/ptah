@@ -153,11 +153,6 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES
 			flags: []string{"--include", "orders"},
 			want:  `(?s)apply --schema/--include to current schema: the --schema/--include selection drops objects that selected objects depend on:\n  - table "main\.orders" depends on table "main\.users" via a foreign key, but "main\.users" is not selected\n.*`,
 		},
-		{
-			name:  "--schemas and an exclude leaving out what a selected object needs",
-			flags: []string{"--schemas", "main", "--exclude", "users"},
-			want:  `(?s)apply --schema/--include to current schema: the --schema/--include selection drops objects that selected objects depend on:\n  - table "main\.orders" depends on table "main\.users" via a foreign key, but "main\.users" is not selected\n.*`,
-		},
 	}
 
 	for _, test := range tests {
@@ -178,6 +173,39 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(out.String(), qt.Not(qt.Contains), "No schema differences detected.")
+		})
+	}
+}
+
+// TestCompare_AKeyIntoAnExcludedTableIsOutOfScope covers the table a selected
+// table's foreign key needs, which the exclusion leaves out. With --schemas or
+// without it, the key is out of scope with the table and the schemas agree
+// (stokaro/ptah#6851).
+func TestCompare_AKeyIntoAnExcludedTableIsOutOfScope(t *testing.T) {
+	const declared = `CREATE TABLE users (id INTEGER PRIMARY KEY);
+CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users (id));
+`
+	tests := []struct {
+		name  string
+		flags []string
+	}{
+		{name: "--schemas and an exclude", flags: []string{"--schemas", "main", "--exclude", "users"}},
+		{name: "an exclude alone", flags: []string{"--exclude", "users"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, schemaFile := selectionFixture(c, declared,
+				"CREATE TABLE users (id INTEGER PRIMARY KEY)",
+				"CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users (id))",
+			)
+			args := append([]string{"--db-url", url, "--schema-file", schemaFile, "--exit-code"}, test.flags...)
+
+			code, stdout, stderr := runCompare(c, args...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "No schema differences detected.\n")
 		})
 	}
 }

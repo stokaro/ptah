@@ -1580,7 +1580,7 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 		p.skipWhitespace()
 	}
 
-	triggerName, err := p.parseQualifiedIdentifier("trigger name")
+	nameParts, err := p.parseIdentifierParts("trigger name")
 	if err != nil {
 		return nil, err
 	}
@@ -1604,6 +1604,10 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	p.skipWhitespace()
 
 	tableName, err := p.parseTableName("trigger table name")
+	if err != nil {
+		return nil, err
+	}
+	triggerName, tableName, err := p.triggerSchema(nameParts, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -1643,6 +1647,42 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 		return nil, err
 	}
 	return trigger.SetBody(body), nil
+}
+
+// triggerSchema is the name of a trigger whose name was written as nameParts,
+// and the table it is on, written as table, once the schema on the name is
+// read. A trigger has no schema of its own in the schema model: it is in its
+// table's.
+//
+// Where the dialect's trigger name may carry a schema
+// ([descriptor.RoutineGrammar.TriggerNameSchema]), the schema is the table's:
+// a table named without one is read in it, and a table in another schema is
+// refused, as the server refuses it. The schemas are compared byte for byte,
+// which refuses `Q1.t ON q1.u` on a server that folds database names as well
+// as on one that does not. A schema that is the dialect's default leaves an
+// unqualified table as written, as it reads everywhere else. Elsewhere a
+// trigger name takes no schema, and one is refused: kept, the name was the
+// whole qualified spelling, and the server created a trigger whose name holds
+// a dot. A parser with no dialect keeps the name as written.
+func (p *Parser) triggerSchema(nameParts []string, table string) (name, onTable string, err error) {
+	written := strings.Join(nameParts, ".")
+	if len(nameParts) == 1 || p.dialect == "" {
+		return written, table, nil
+	}
+	if !p.target.grammar.Routines.TriggerNameSchema || len(nameParts) > 2 {
+		return "", "", fmt.Errorf("trigger name %s names a schema, and a trigger here is in its table's schema; "+
+			"write the trigger's name alone and qualify its table", written)
+	}
+	schema := unquotedNamePart(nameParts[0])
+	ref, ok := tableref.Parse(table)
+	switch {
+	case ok && ref.Qualified && ref.Schema != schema:
+		return "", "", fmt.Errorf("trigger %s is in schema %s and its table %s in schema %s; "+
+			"a trigger has to be in its table's schema", written, schema, table, ref.Schema)
+	case ok && !ref.Qualified && schema != p.target.defaultSchema:
+		table = nameParts[0] + "." + table
+	}
+	return nameParts[1], table, nil
 }
 
 // parseTriggerExecuteClause reads the PostgreSQL

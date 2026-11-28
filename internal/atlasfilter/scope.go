@@ -630,12 +630,16 @@ func ScopeGeneratedSelectionReport(
 // positive selection onto it, and validate the result for cross-scope
 // dependencies. The two states share every decision in between, so they share
 // one body.
+//
+// validate receives the state, its projection before the exclusion and the
+// final result, so it can tell a table the exclusion left out from one the
+// positive selection did not pick.
 func scopeReport[T any](
 	db *T,
 	scope Scope,
 	exclude func(*T, Scope) (*T, ExcludeReport, error),
 	project func(*scopeSelection, *T) (*T, error),
-	validate func(*T, *T, *scopeSelection) error,
+	validate func(original, projected, final *T, selection *scopeSelection) error,
 ) (*T, ScopeReports, error) {
 	if !scope.Positive() {
 		filtered, report, err := exclude(db, scope)
@@ -664,7 +668,7 @@ func scopeReport[T any](
 	if err != nil {
 		return nil, ScopeReports{}, err
 	}
-	if err := validate(db, final, selection); err != nil {
+	if err := validate(db, projected, final, selection); err != nil {
 		return nil, ScopeReports{}, err
 	}
 	return final, ScopeReports{
