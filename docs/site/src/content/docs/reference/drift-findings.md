@@ -115,6 +115,7 @@ These categories count a setting or a part of an object rather than the object:
 | `grant_options_removed` | warning | Privileges the database holds `WITH GRANT OPTION` and the desired schema grants without it. |
 | `index_visibility_changed` | warning | Indexes whose visibility to the optimizer changes: MySQL's `VISIBLE` and `INVISIBLE`, MariaDB's `IGNORED`. |
 | `indexes_renamed` | warning | Indexes the plan renames in place, on YDB. A query that names the index stops finding it. |
+| `removals_blocked` | destructive | Drops of a database or a table that the desired schema asks for and the comparison does not plan, because the database or the table holds an object the selection leaves out, such as a column `--exclude` names. The plan commands refuse such a comparison; `schema compare` and `schema diff` print a warning for each. |
 | `rls_force_added` | safe | Tables whose `FORCE ROW LEVEL SECURITY` the plan turns on. |
 | `rls_force_removed` | destructive | Tables whose `FORCE ROW LEVEL SECURITY` the plan turns off, which exempts the owner from the table's policies. |
 | `table_collations_changed` | warning | Tables whose default collation changes, on MySQL and MariaDB. The columns the table holds keep their collations; a column added or restated without one takes the new default. |

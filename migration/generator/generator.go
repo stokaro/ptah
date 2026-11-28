@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
@@ -609,6 +610,11 @@ func compareForPlan(
 		ctx, conn, desired, dbSchema, compareOpts, opts.Runtime,
 	)
 	if err != nil {
+		return nil, schemadiff.Diagnostics{}, fmt.Errorf("error comparing generated and database schemas: %w", err)
+	}
+	// A migration file is run later, so a drop the selection blocked is
+	// refused here rather than left out of a file that would not converge.
+	if err := schemaremoval.RefuseBlocked(diff); err != nil {
 		return nil, schemadiff.Diagnostics{}, fmt.Errorf("error comparing generated and database schemas: %w", err)
 	}
 	if err := opts.reportUndecided(undecided); err != nil {

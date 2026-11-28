@@ -48,6 +48,7 @@ import (
 	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/schemavalidate"
@@ -670,6 +671,12 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", comparisonRefusal(err))
 	}
+	// A plan without a drop the selection blocked would not converge, and one
+	// with it would remove what the selection keeps; native `schema apply`,
+	// `schema plan` and the compatibility `schema apply` all plan here.
+	if err := schemaremoval.RefuseBlocked(compared); err != nil {
+		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
+	}
 	// No statement is planned for a withheld object, so a plan that says
 	// nothing about it quietly does less than the desired schema asks for. The
 	// wording names neither surface's flags: native `schema apply` and the
@@ -980,6 +987,7 @@ func scopeApplyStates(
 	project := func(scope atlasfilter.Scope) scopedApplyStates {
 		projectedCurrent, currentReports, currentErr := scopeDatabaseSide(current, scope, "current schema")
 		projectedDesired, desiredReports, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+		pairApplySchemas(current, desired, projectedCurrent, projectedDesired)
 		return scopedApplyStates{
 			current:        projectedCurrent,
 			desired:        projectedDesired,
@@ -1005,6 +1013,35 @@ func scopeApplyStates(
 		return result
 	}
 	return project(pairScope)
+}
+
+// pairApplySchemas keeps a schema on both projected sides of a comparison
+// wherever one side's projection kept it and the other side has it; see
+// [atlasfilter.PairSchemas].
+func pairApplySchemas(
+	current *catalog.Database,
+	desired *schemamodel.Database,
+	projectedCurrent *catalog.Database,
+	projectedDesired *schemamodel.Database,
+) {
+	if current == nil || desired == nil || projectedCurrent == nil || projectedDesired == nil {
+		return
+	}
+	currentKept, desiredKept := catalogSchemaNames(projectedCurrent), modelSchemaNames(projectedDesired.Schemas)
+	projectedCurrent.Schemas = atlasfilter.PairSchemas(current.Schemas, projectedCurrent.Schemas, desiredKept, catalogSchemaName)
+	projectedDesired.Schemas = atlasfilter.PairSchemas(desired.Schemas, projectedDesired.Schemas, currentKept, modelSchemaName)
+}
+
+func catalogSchemaName(schema catalog.Schema) string { return schema.Name }
+
+func modelSchemaName(schema schemamodel.Schema) string { return schema.Name }
+
+func modelSchemaNames(schemas []schemamodel.Schema) []string {
+	names := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		names = append(names, schema.Name)
+	}
+	return names
 }
 
 func validateCurrentApplyState(

@@ -401,7 +401,12 @@ connection's own schema with no schema of its own, so the connection default
 supplies the qualified spelling — `--exclude public.users` and
 `--exclude users` remove the same table on a PostgreSQL database URL, and both
 subtract it from every side of a comparison, so an excluded object is neither
-created nor dropped.
+created nor dropped. Nor is the table that holds an excluded column, index,
+constraint or trigger, or the MySQL or MariaDB database that holds an excluded
+object: `schema apply` and `migrate diff` refuse a plan that would drop it and
+name the object, and `schema diff` prints a warning and leaves the drop out of
+the SQL. The community binary drops both; see
+[A drop that would remove an excluded object](../retained-divergences/#a-drop-that-would-remove-an-excluded-object).
 
 That rule covers every top-level object kind: tables, views, materialized
 views, extensions, enums, functions, sequences, domains, composite types and
@@ -1277,7 +1282,10 @@ them:
 - A declared character set or collation that differs is changed with
   `ALTER DATABASE`. One the declaration leaves out is the server's to choose.
 - A database the server holds and the desired schema does not declare is
-  dropped with everything in it, after every other statement.
+  dropped with everything in it, after every other statement. One the desired
+  schema records with `ptah:not-described schema` is left alone. One that
+  holds an object the selection leaves out is not dropped: `schema apply`
+  refuses the run and names the object, and `schema diff` prints a warning.
 - The server's own databases, such as `mysql` and `sys`, are never planned.
 
 `--schema` limits the run to the databases it names. Use it to apply a file

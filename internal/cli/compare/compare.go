@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/sqlitevirtual"
@@ -292,6 +293,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
 	schemascope.WarnUndescribed(cmd.ErrOrStderr(), undescribed)
+	schemaremoval.Report(cmd.ErrOrStderr(), diff)
 
 	// 4. Display differences: every category the comparator recorded, then the
 	// SQL that reconciles them.

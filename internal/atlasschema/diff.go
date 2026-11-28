@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -48,6 +49,7 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
@@ -821,10 +823,9 @@ func diffResolvedStates(
 	if err != nil {
 		return comparedDiff{}, err
 	}
-	if opts.Diagnostics == nil && !undecided.Empty() {
-		return comparedDiff{}, undecided.Err()
+	if err := reportDiffNotes(ctx, opts.Diagnostics, undecided, compared); err != nil {
+		return comparedDiff{}, err
 	}
-	undecidednote.Report(ctx, opts.Diagnostics, undecided, "--from", "--to")
 	if compareOpts.ReplayedCurrent {
 		definer.WarnUnnamedViews(opts.Diagnostics, compared, dialect)
 	}
@@ -1649,11 +1650,69 @@ func scopeDiffStates(
 	}
 	supportScope, supportChanged := extensionSupportScope(scope, fromSide.selection, toSide.selection)
 	pairScope, requirementsChanged := requirementScope(supportScope, toSide.selection, fromSide.selection)
-	if !supportChanged && !requirementsChanged {
+	if supportChanged || requirementsChanged {
+		fromSide = scopeDiffState(ctx, fromState, withLiveKeys(pairScope, fromState, toState), "--from schema", dialect, runtime)
+		toSide = scopeDiffState(ctx, toState, withLiveKeys(pairScope, toState, fromState), "--to schema", dialect, runtime)
+	}
+	if fromSide.err != nil || toSide.err != nil {
 		return fromSide, toSide
 	}
-	return scopeDiffState(ctx, fromState, withLiveKeys(pairScope, fromState, toState), "--from schema", dialect, runtime),
-		scopeDiffState(ctx, toState, withLiveKeys(pairScope, toState, fromState), "--to schema", dialect, runtime)
+	return pairDiffSchemas(fromState, toState, fromSide, toSide)
+}
+
+// reportDiffNotes names on diagnostics what a diff leaves out of the SQL it
+// prints: the declared objects the comparison could not decide, and each drop
+// the selection blocked. A diff prints SQL and runs none, so neither stops it;
+// a caller with nowhere to name them is refused instead.
+func reportDiffNotes(ctx context.Context, diagnostics io.Writer, undecided schemadiff.Diagnostics, diff *difftypes.SchemaDiff) error {
+	if diagnostics == nil {
+		return cmp.Or(undecided.Err(), schemaremoval.RefuseBlocked(diff))
+	}
+	undecidednote.Report(ctx, diagnostics, undecided, "--from", "--to")
+	schemaremoval.Report(diagnostics, diff)
+	return nil
+}
+
+// pairDiffSchemas keeps a schema on both projected sides of a diff wherever
+// one side's projection kept it and the other side has it; see
+// [atlasfilter.PairSchemas]. The --from side is compared through its catalog
+// and the --to side through its model, so those are the lists each side's
+// kept names come from, and both representations of a side are restored.
+func pairDiffSchemas(fromState, toState atlassource.State, fromSide, toSide scopedDiffState) (from, to scopedDiffState) {
+	if fromSide.database == nil || toSide.schema == nil {
+		return fromSide, toSide
+	}
+	fromKept, toKept := catalogSchemaNames(fromSide.database), modelSchemaNames(toSide.schema.Schemas)
+	return restoreDiffSchemas(fromState, fromSide, toKept), restoreDiffSchemas(toState, toSide, fromKept)
+}
+
+// restoreDiffSchemas restores on side, as [atlasfilter.PairSchemas] does, the
+// schemas of state that other names, without changing a value side shares
+// with state.
+func restoreDiffSchemas(state atlassource.State, side scopedDiffState, other []string) scopedDiffState {
+	if side.schema != nil && state.Schema != nil {
+		if paired := atlasfilter.PairSchemas(state.Schema.Schemas, side.schema.Schemas, other, modelSchemaName); len(paired) != len(side.schema.Schemas) {
+			schema := *side.schema
+			schema.Schemas = paired
+			side.schema = &schema
+		}
+	}
+	if side.database != nil {
+		held := state.DB
+		var all []catalog.Schema
+		switch {
+		case held != nil:
+			all = held.Schemas
+		case state.Schema != nil:
+			all = goschematodb.SchemaEntries(state.Schema.Schemas)
+		}
+		if paired := atlasfilter.PairSchemas(all, side.database.Schemas, other, catalogSchemaName); len(paired) != len(side.database.Schemas) {
+			database := *side.database
+			database.Schemas = paired
+			side.database = &database
+		}
+	}
+	return side
 }
 
 // diffSides is the two sides of a schema diff once they are scoped and

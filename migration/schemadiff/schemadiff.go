@@ -190,9 +190,7 @@ func compareReportingUndecidedAdditions(
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
 
-	if err := compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules); err != nil {
-		return nil, Diagnostics{}, err
-	}
+	compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules)
 
 	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules)
 	if err != nil {
@@ -687,7 +685,8 @@ func comparesServerDatabases(dialect string) bool {
 
 // compareSchemaContainers compares whole-server databases before their
 // contents, then adds declared schemas or namespaces as the target's rules
-// require. It refuses a database drop that would remove an excluded object.
+// require. A database drop that would remove an object the selection left out
+// is recorded as blocked rather than planned.
 func compareSchemaContainers(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
@@ -696,20 +695,17 @@ func compareSchemaContainers(
 	opts *config.CompareOptions,
 	semantics identifier.Semantics,
 	rules schemacomparison.Rules,
-) error {
+) {
 	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
-		if err := compare.ServerSchemas(diff, desired, database.Schemas, semantics, database.SchemaRemovalBlockers); err != nil {
-			return err
-		}
+		compare.ServerSchemas(diff, desired, database.Schemas, semantics, cov, database.SchemaRemovalBlockers)
 	}
 	if comparisons.Get(opts.Dialect).DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)
-		return nil
+		return
 	}
 	if rules.Namespaces {
 		compare.DeclaredNamespaces(diff, desired, database.Schemas, cov, semantics)
 	}
-	return nil
 }
 
 // targetInputs are what a comparison for a selected target compares: both

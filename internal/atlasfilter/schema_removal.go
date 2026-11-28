@@ -1,56 +1,154 @@
 package atlasfilter
 
 import (
-	"fmt"
+	"cmp"
+	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/internal/readscope"
 )
 
-// protectSchemaContents records a resource a projection removed from each
-// schema. A parent database is still a compared object, but dropping it would
-// also remove every resource the projection promises to leave alone.
-func protectSchemaContents(before, after *catalog.Database, defaultSchema string) {
+// protectSchemaContents records, for each schema and each kept table, one
+// object the projection from before to after took out of it, with cause as
+// the reason it left. A parent database and a kept table are still compared,
+// but dropping either would also remove what the projection promises to leave
+// alone. A child whose table left with it is not recorded on its own: the
+// table speaks for it. patterns spells each container for the remedies.
+func protectSchemaContents(before, after *catalog.Database, defaultSchema string, patterns containerPatterns, cause catalog.SelectionCause) {
 	kept := schemaContents(after, defaultSchema)
 	read := schemaContents(before, defaultSchema)
+	tables := keptTables(after, defaultSchema)
 	for key, object := range read {
-		if _, exists := kept[key]; !exists {
-			parent := exactIdentities.TableParts(object.Schema.Source, object.Parent.Source).Key()
-			_, readParent := read[parent]
-			_, keptParent := kept[parent]
-			if readParent && !keptParent {
-				continue
-			}
-			blockSchemaRemoval(after, object.Schema.Source, object.String())
+		if _, exists := kept[key]; exists {
+			continue
 		}
+		parent := exactIdentities.TableParts(object.Schema.Source, object.Parent.Source).Key()
+		_, readParent := read[parent]
+		_, keptParent := kept[parent]
+		if readParent && !keptParent {
+			continue
+		}
+		blocker := catalog.SelectionBlocker{Object: object.String(), Cause: cause}
+		if table, child := tables[parent]; child && !object.Parent.Empty() {
+			blockTableRemoval(after, table, patterns, blocker)
+		}
+		blockSchemaRemoval(after, object.Schema.Source, blocker)
 	}
 }
 
-func blockSchemaRemoval(database *catalog.Database, schema, reason string) {
+// containerPatterns spells a database or a table as a selector names it on
+// one run: from the realm, where the first part of a pattern is a schema, or
+// from the connection's schema, where it is an object and a table in another
+// schema is reached by its bare name. scope is the schema patterns count from,
+// empty on a realm run, and defaultSchema owns a table the read left
+// unqualified.
+type containerPatterns struct {
+	scope, defaultSchema string
+}
+
+func (p containerPatterns) table(schema, name string) string {
+	schema = cmp.Or(schema, p.defaultSchema)
+	if p.scope != "" || schema == "" {
+		return name
+	}
+	return schema + "." + name
+}
+
+// keptTables maps the identity of each table database holds, keyed as
+// [schemaContents] keys a parent, to the table.
+func keptTables(database *catalog.Database, defaultSchema string) map[objectidentity.Key]catalog.Table {
+	tables := make(map[objectidentity.Key]catalog.Table, len(database.Tables))
+	for _, table := range database.Tables {
+		ref := exactIdentities.TableParts(table.Schema, table.Name)
+		if ref.Schema.Empty() {
+			ref.Schema = exactIdentities.TableParts(defaultSchema, ref.Name.Source).Schema
+		}
+		tables[ref.Key()] = table
+	}
+	return tables
+}
+
+func blockSchemaRemoval(database *catalog.Database, schema string, blocker catalog.SelectionBlocker) {
 	if schema == "" {
 		return
 	}
-	prior := database.SchemaRemovalBlockers[schema]
-	if prior != "" && prior <= reason {
-		return
+	blocker.Pattern = schema
+	database.SchemaRemovalBlockers = withBlocker(database.SchemaRemovalBlockers, schema, blocker)
+}
+
+// blockTableRemoval records blocker for table, keyed as
+// [catalog.Database.TableRemovalBlockers] keys it: the read's own spelling,
+// with no default schema put in.
+func blockTableRemoval(database *catalog.Database, table catalog.Table, patterns containerPatterns, blocker catalog.SelectionBlocker) {
+	blocker.Pattern = patterns.table(table.Schema, table.Name)
+	database.TableRemovalBlockers = withBlocker(database.TableRemovalBlockers, catalog.QualifyTableName(table.Schema, table.Name), blocker)
+}
+
+// withBlocker records blocker for name unless one that sorts first is already
+// there, so the blocker a refusal names does not depend on map order.
+func withBlocker(blockers map[string]catalog.SelectionBlocker, name string, blocker catalog.SelectionBlocker) map[string]catalog.SelectionBlocker {
+	if prior, exists := blockers[name]; exists && !blockerSortsBefore(blocker, prior) {
+		return blockers
 	}
-	if database.SchemaRemovalBlockers == nil {
-		database.SchemaRemovalBlockers = make(map[string]string)
+	if blockers == nil {
+		blockers = make(map[string]catalog.SelectionBlocker)
 	}
-	database.SchemaRemovalBlockers[schema] = reason
+	blockers[name] = blocker
+	return blockers
+}
+
+// blockerSortsBefore orders blockers so a refusal names an object the read
+// found ahead of a kind the read left out, which says less about what the
+// drop would remove.
+func blockerSortsBefore(a, b catalog.SelectionBlocker) bool {
+	return cmp.Or(
+		cmp.Compare(wholeKindCause(a.Cause), wholeKindCause(b.Cause)),
+		cmp.Compare(a.Object, b.Object),
+		cmp.Compare(a.Cause, b.Cause),
+		cmp.Compare(a.Selector, b.Selector),
+	) < 0
+}
+
+// wholeKindCause ranks a cause that names a kind the read left out after one
+// that names an object.
+func wholeKindCause(cause catalog.SelectionCause) int {
+	if cause == catalog.SelectionKindExcluded || cause == catalog.SelectionKindNotIncluded {
+		return 1
+	}
+	return 0
 }
 
 // A whole-kind selector lets a reader omit that kind's catalog query. An
-// empty collection therefore cannot prove that dropping its database is safe.
+// empty collection therefore cannot prove that dropping its database is safe,
+// nor, for a kind of table child such as a trigger, that dropping a table is.
 func (s *exclusionState) protectUnreadSchemaContents(database *catalog.Database) {
 	for _, pattern := range s.patterns {
-		if len(pattern.wholeKinds()) == 0 {
+		kinds := pattern.wholeKinds()
+		if len(kinds) == 0 {
 			continue
 		}
+		blocker := catalog.SelectionBlocker{Object: string(kinds[0]), Cause: catalog.SelectionKindExcluded, Selector: pattern.raw}
 		for _, schema := range database.Schemas {
-			blockSchemaRemoval(database, schema.Name, fmt.Sprintf("objects excluded by %q", pattern.raw))
+			blockSchemaRemoval(database, schema.Name, blocker)
+		}
+		child := slices.IndexFunc(kinds, tableChildKind)
+		if child < 0 {
+			continue
+		}
+		blocker.Object = string(kinds[child])
+		for _, table := range database.Tables {
+			blockTableRemoval(database, table, s.containerPatterns, blocker)
 		}
 	}
+}
+
+// tableChildKind reports whether kind is a family of objects that belong to a
+// table and go with it when the table is dropped.
+func tableChildKind(kind readscope.Kind) bool {
+	return slices.ContainsFunc(selectorKinds, func(candidate selectorKind) bool {
+		return candidate.child && slices.Contains(candidate.kinds, kind)
+	})
 }
 
 // schemaContents names objects by structured identity, including table parts

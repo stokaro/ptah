@@ -821,6 +821,15 @@ type SchemaDiff struct {
 	// drop fails on a schema that holds anything.
 	SchemasRemoved []string `json:"schemas_removed,omitempty"`
 
+	// RemovalsBlocked are the drops a comparison found and did not plan,
+	// because the database or table holds an object a selection left out of
+	// the description, and dropping it would remove that object too: with
+	// --exclude db.t, the database db, and with --exclude db.u.c, the table
+	// db.u. A command that plans or applies SQL refuses a comparison that
+	// holds one; a command that reports lists it with its other findings.
+	// Sorted by kind, then name.
+	RemovalsBlocked []BlockedRemoval `json:"removals_blocked,omitempty"`
+
 	// SchemasModified are the schemas both sides hold whose character set or
 	// collation the desired state declares differently, on a whole-server
 	// comparison of MySQL or MariaDB.
@@ -1587,6 +1596,8 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //   - default privileges, and the grant options on them
 //   - row-level security policies, and the tables RLS is enabled or disabled on
 //   - SQL Server extended properties
+//   - drops a selection blocked, [SchemaDiff.RemovalsBlocked], which leave the
+//     plan unable to converge
 //
 // The method itself is the full set; the list above names the groups rather
 // than each individual field.
@@ -1621,11 +1632,34 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasRLSChanges() ||
 		d.hasRoleChanges() ||
 		d.hasConstraintChanges() ||
-		len(d.ObjectCommentsChanged) > 0
+		len(d.ObjectCommentsChanged) > 0 ||
+		len(d.RemovalsBlocked) > 0
 }
 
 func (d *SchemaDiff) hasFeatureChanges() bool {
 	return len(d.FeatureChanges) > 0
+}
+
+// The kinds of drop a [BlockedRemoval] withholds.
+const (
+	// BlockedDatabase is a MySQL or MariaDB database a whole-server
+	// comparison would drop.
+	BlockedDatabase = "database"
+	// BlockedTable is a table.
+	BlockedTable = "table"
+)
+
+// BlockedRemoval is one drop a comparison withheld; see
+// [SchemaDiff.RemovalsBlocked].
+type BlockedRemoval struct {
+	// Kind is [BlockedDatabase] or [BlockedTable].
+	Kind string `json:"kind"`
+	// Name is the database or table, spelled as the plan would name it in its
+	// DROP.
+	Name string `json:"name"`
+	// BlockedBy is the object the drop would remove, and why the selection
+	// left it out.
+	BlockedBy catalog.SelectionBlocker `json:"blocked_by"`
 }
 
 // SchemaChange is a schema whose attributes a whole-server comparison

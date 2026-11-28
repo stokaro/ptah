@@ -5,6 +5,7 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
@@ -37,6 +39,7 @@ import (
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
@@ -281,9 +284,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err := secretrotation.Apply(cmd, compareOpts); err != nil {
 		return err
 	}
-	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
-	)
+	diff, undecided, err := comparePlannedSchemas(cmd.Context(), conn, result, dbSchema, compareOpts, runtime)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
@@ -536,4 +537,25 @@ func renderSafetyReport(w io.Writer, format string, assessments []safety.Stateme
 	default:
 		return fmt.Errorf("unsupported report format %q", format)
 	}
+}
+
+// comparePlannedSchemas compares desired with current for a plan, and refuses
+// a comparison that withheld a drop: a plan without the drop would not
+// converge, and one with it would remove what the selection keeps.
+func comparePlannedSchemas(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	opts *config.CompareOptions,
+	runtime schemadiff.DatabaseRuntime,
+) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, opts, runtime)
+	if err != nil {
+		return nil, schemadiff.Diagnostics{}, err
+	}
+	if err := schemaremoval.RefuseBlocked(diff); err != nil {
+		return nil, schemadiff.Diagnostics{}, err
+	}
+	return diff, undecided, nil
 }

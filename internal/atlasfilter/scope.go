@@ -723,6 +723,9 @@ type scopeSelection struct {
 	required     []objectidentity.ID
 	// vocabulary is the run's owners' selector types.
 	vocabulary vocabulary
+	// containerPatterns spells a database or a table the projection
+	// protects as this run's patterns name it, for a refusal's remedy.
+	containerPatterns containerPatterns
 	// fold is the UnquotedFold of a projected generated state, which spells
 	// its names as a statement does; see storedSpelling. Empty meets every
 	// name as written.
@@ -753,6 +756,9 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 		bindings:         scope.Bindings,
 		requirements:     scope.Requirements,
 		vocabulary:       vocabulary{selections: scope.Selections},
+		containerPatterns: containerPatterns{
+			scope: scope.patternScopeSchema(), defaultSchema: scope.DefaultSchema,
+		},
 	}
 }
 

@@ -239,7 +239,7 @@ func TestServerSchemas_CountsTheDatabasesBothSidesHold(t *testing.T) {
 	desired := &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "fresh"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	c.Assert(compare.ServerSchemas(diff, desired, []catalog.Schema{{Name: "app"}, {Name: "legacy"}}, identifier.ForDialect("mysql"), nil), qt.IsNil)
+	compare.ServerSchemas(diff, desired, []catalog.Schema{{Name: "app"}, {Name: "legacy"}}, identifier.ForDialect("mysql"), compare.Coverage{}, nil)
 
 	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Schemas: 1})
 	c.Assert(diff.SchemasAdded, qt.HasLen, 1)

@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlsystemdb"
-	"ptah.run/internal/schemaremoval"
 )
 
 // ServerSchemas records on diff the databases a comparison of a whole MySQL or
@@ -37,16 +36,21 @@ import (
 // database that exists. Names are compared the way the server compares table
 // names, which is how it compares database names too.
 //
-// removalBlockers names a resource outside the selection for each protected
-// database. Removing such a database returns an error instead of a drop. A
-// nil map leaves every database eligible for removal.
+// A database the desired state records with `ptah:not-described schema`,
+// unnamed or by name, is left alone: cov does not plan its removal, so the
+// comparison neither drops it nor reports it. removalBlockers names an object
+// outside the selection for each database that holds one. Such a database is
+// not dropped either: it is recorded in [difftypes.SchemaDiff.RemovalsBlocked],
+// for a command that plans SQL to refuse and a command that reports to list.
+// A nil map leaves every database eligible for removal.
 func ServerSchemas(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	current []catalog.Schema,
 	semantics identifier.Semantics,
-	removalBlockers map[string]string,
-) error {
+	cov Coverage,
+	removalBlockers map[string]catalog.SelectionBlocker,
+) {
 	held := make(map[string]catalog.Schema, len(current))
 	for _, schema := range current {
 		held[semantics.TableIdentityKey(schema.Name)] = schema
@@ -73,17 +77,29 @@ func ServerSchemas(
 		}
 	}
 	for _, schema := range current {
-		if _, kept := declared[semantics.TableIdentityKey(schema.Name)]; !kept {
-			if err := schemaremoval.Refuse(schema.Name, removalBlockers); err != nil {
-				return err
-			}
-			diff.SchemasRemoved = append(diff.SchemasRemoved, schema.Name)
+		if _, kept := declared[semantics.TableIdentityKey(schema.Name)]; kept || !cov.PlansRemovalIn(schema.Name) {
+			continue
 		}
+		if blocker, blocked := removalBlockers[schema.Name]; blocked {
+			diff.RemovalsBlocked = append(diff.RemovalsBlocked, difftypes.BlockedRemoval{
+				Kind: difftypes.BlockedDatabase, Name: schema.Name, BlockedBy: blocker,
+			})
+			continue
+		}
+		diff.SchemasRemoved = append(diff.SchemasRemoved, schema.Name)
 	}
 	slices.SortFunc(diff.SchemasAdded, func(a, b schemamodel.Schema) int { return cmp.Compare(a.Name, b.Name) })
 	slices.SortFunc(diff.SchemasModified, func(a, b difftypes.SchemaChange) int { return cmp.Compare(a.Name, b.Name) })
 	slices.Sort(diff.SchemasRemoved)
-	return nil
+	SortRemovalsBlocked(diff)
+}
+
+// SortRemovalsBlocked puts [difftypes.SchemaDiff.RemovalsBlocked] in the order
+// its documentation states: by kind, then name.
+func SortRemovalsBlocked(diff *difftypes.SchemaDiff) {
+	slices.SortFunc(diff.RemovalsBlocked, func(a, b difftypes.BlockedRemoval) int {
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
+	})
 }
 
 // serverDatabasesOf is the databases desired declares, in declaration order:

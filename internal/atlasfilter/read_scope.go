@@ -7,6 +7,15 @@ import (
 	"ptah.run/internal/readscope"
 )
 
+// selectorKind is an object kind a reader needs a privilege to see, with the
+// selector type that leaves it out and whether a selector has to reach it
+// through its table.
+type selectorKind struct {
+	selectorType string
+	kinds        []readscope.Kind
+	child        bool
+}
+
 // Each object kind a reader needs a privilege to see, with the selector type
 // that leaves it out and the part of a name a selector has to reach.
 var (
@@ -14,11 +23,7 @@ var (
 	// and [exclusionState.filterTriggers] drop them with it.
 	tableKinds = []readscope.Kind{readscope.Tables, readscope.Constraints, readscope.Triggers}
 
-	selectorKinds = []struct {
-		selectorType string
-		kinds        []readscope.Kind
-		child        bool
-	}{
+	selectorKinds = []selectorKind{
 		{selectorType: "table", kinds: tableKinds},
 		{selectorType: "view", kinds: []readscope.Kind{readscope.Views}},
 		{selectorType: "function", kinds: []readscope.Kind{readscope.Routines}},

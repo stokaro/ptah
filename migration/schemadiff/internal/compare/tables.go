@@ -222,6 +222,7 @@ func TablesAndColumnsWithTableContext(
 	}
 
 	builder := objectidentity.NewBuilder(semantics)
+	var blocked []blockedTable
 	for identity, table := range dbTables {
 		if _, exists := genTables[identity]; !exists {
 			// A table a facet defines, such as a SQLite virtual table, is a
@@ -235,9 +236,16 @@ func TablesAndColumnsWithTableContext(
 				!schemaext.PlansDefinedTableRemoval(desired.FeatureCoverage, kind, builder.TablePartsVerbatim(table.Schema, table.Name)) {
 				continue
 			}
-			diff.TablesRemoved = append(diff.TablesRemoved, difftypes.TableRemoval{
+			removal := difftypes.TableRemoval{
 				Name: removedTableName(table.Schema, table.Name, dialect), Current: difftypes.TableObservationFor(database, table, dialect, semantics),
-			})
+			}
+			// A table holding a child the selection left out, such as an
+			// excluded column, is not dropped: the drop would take the child.
+			if blocker, held := database.TableRemovalBlockers[catalog.QualifyTableName(table.Schema, table.Name)]; held {
+				blocked = append(blocked, blockedTable{removal: removal, blocker: blocker})
+				continue
+			}
+			diff.TablesRemoved = append(diff.TablesRemoved, removal)
 		}
 	}
 
@@ -309,6 +317,16 @@ func TablesAndColumnsWithTableContext(
 	diff.TablesAdded = keptTables
 	cov.recordUndecidedAdditions(withheldTables)
 	diff.TablesRemoved = keepPlannedRemovals(cov, coverage.Schema, diff.TablesRemoved, tableRemovalSchemaOnly)
+	// A table coverage would not drop anyway is not a blocked drop.
+	for _, table := range blocked {
+		if len(keepPlannedRemovals(cov, coverage.Schema, []difftypes.TableRemoval{table.removal}, tableRemovalSchemaOnly)) == 0 {
+			continue
+		}
+		diff.RemovalsBlocked = append(diff.RemovalsBlocked, difftypes.BlockedRemoval{
+			Kind: difftypes.BlockedTable, Name: table.removal.Name, BlockedBy: table.blocker,
+		})
+	}
+	SortRemovalsBlocked(diff)
 
 	// Sort for consistent output
 	sort.Slice(diff.TablesAdded, func(i, j int) bool {
@@ -320,6 +338,13 @@ func TablesAndColumnsWithTableContext(
 	sort.Slice(diff.TablesModified, func(i, j int) bool {
 		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName
 	})
+}
+
+// blockedTable is a table removal a selection blocked, with the child the
+// drop would take.
+type blockedTable struct {
+	removal difftypes.TableRemoval
+	blocker catalog.SelectionBlocker
 }
 
 // tableMapIdentity keys a table by the bytes of its names. This path decides

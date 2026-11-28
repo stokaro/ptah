@@ -131,6 +131,7 @@ func excludeDatabase(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = target.dialect
+	state.containerPatterns = containerPatterns{scope: patternScope, defaultSchema: defaultSchema}
 	state.foldSelectors(unquotedFold(target.dialect))
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
@@ -186,7 +187,7 @@ func excludeDatabase(
 	state.noteUnreadRoles(filtered.UnreadRoles)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
-	protectSchemaContents(schema, filtered, defaultSchema)
+	protectSchemaContents(schema, filtered, defaultSchema, state.containerPatterns, catalog.SelectionExcluded)
 	state.protectUnreadSchemaContents(filtered)
 	return filtered, state.report(), nil
 }
@@ -906,6 +907,9 @@ type exclusionState struct {
 	// vocabulary is the run's owners' selector types and fields.
 	vocabulary vocabulary
 	patterns   []resourcePattern
+	// containerPatterns spells a database or a table the exclusion protects
+	// as this run's patterns name it, for a refusal's remedy.
+	containerPatterns containerPatterns
 	// dialect is the target the state describes, read for the names its
 	// server gives a key, for whether it changes a constraint in place, and
 	// for which index enforces a constraint. Empty is a target nothing
@@ -2483,6 +2487,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// keeps must still see it.
 		RemovalBlockers:       slices.Clone(schema.RemovalBlockers),
 		SchemaRemovalBlockers: maps.Clone(schema.SchemaRemovalBlockers),
+		TableRemovalBlockers:  maps.Clone(schema.TableRemovalBlockers),
 		// The planning context is what a filtered read established outside its
 		// scope, for planning only. A filter narrows the compared description
 		// and leaves the context as it is; without it a provider's plan cannot

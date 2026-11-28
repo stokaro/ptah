@@ -176,6 +176,7 @@ own measurement conditions.
 | [A MariaDB table changed to a UCA 14.0.0 collation](#a-mariadb-table-changed-to-a-uca-1400-collation) | writes the character set the collation names on the table, restates a column that takes it without one, and converges in one apply | writes the dev database's character set beside a collation of another, which MariaDB refuses, and gives such a column the character set's default collation |
 | [A backslash on a `NO_BACKSLASH_ESCAPES` session](#a-backslash-on-a-no_backslash_escapes-session) | writes a literal for the session that runs it, so the server stores the declared value | stores four backslashes where the declaration holds one |
 | [A column change a row does not fit, on a MySQL session without a strict mode](#a-column-change-a-row-does-not-fit-on-a-mysql-session-without-a-strict-mode) | runs the plan under a strict mode, so the server refuses the change, the row keeps its value, and the run exits `1` naming the column | applies the change, the server rewrites the row, and the run exits `0` |
+| [A drop that would remove an excluded object](#a-drop-that-would-remove-an-excluded-object) | refuses `schema apply` and `migrate diff`, and warns on `schema diff`, naming the object | drops the table or the database with the object in it (v1.4.0) |
 | [A type change that rounds stored values](#a-type-change-that-rounds-stored-values) | refuses a type change that keeps fewer digits after the point while a row holds a value it would change, and names each column, unless `PTAH_ALLOW_VALUE_ROUNDING=1` | applies the change, the server rounds each value, and the run exits `0` |
 
 ## A `--config` selection naming more than one file
@@ -2489,6 +2490,46 @@ For this schema apply, `ptah-compat` exits `1` where the binary exits `0`.
 `integration/valuerounding/migrationfile_e2e_test.go`,
 `integration/valuerounding/rollback_file_e2e_test.go` and
 `integration/valuerounding/rollback_waiver_e2e_test.go`
+
+## A drop that would remove an excluded object
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** An exclude selector names an object the run must leave
+alone. Dropping the table or the database that holds it removes the object as
+well, so `ptah-compat` plans neither drop. `schema apply` and `migrate diff`
+refuse the run and name the object the drop would remove, with the ways out:
+declare the table or the database to keep it, or exclude the whole of it to
+leave it alone. `schema diff` prints the same text as a warning and leaves the
+drop out of the SQL it prints. A selector that leaves a whole kind out of the
+read, such as `*[type=trigger]` for a table or `*[type=function]` for a
+database, blocks the drop the same way, because the read cannot show that the
+table or the database holds none.
+
+Measured on 2026-11-28 with the community binary v1.4.0 and
+`schema apply --dry-run` against a whole MySQL 8.4 server holding the databases
+`app` and `db`. `db` holds the tables `t` and `u`; `u` holds the column `c`,
+the index `ix` and the trigger `trg`. The desired schema declares `app` only,
+or `app`, `db` and `db.t`:
+
+| Desired schema | `--exclude` | Binary | `ptah-compat` |
+| --- | --- | --- | --- |
+| `app` | `db.t` | `DROP DATABASE db` | refuses, naming `table db.t` |
+| `app`, `db`, `db.t` | `db.u.c` | `DROP TABLE db.u` | refuses, naming `column db.u.c` |
+| `app`, `db`, `db.t` | `db.u.ix` | `DROP TABLE db.u` | refuses, naming `index db.u.ix` |
+| `app`, `db`, `db.t` | `db.u.trg` | `DROP TABLE db.u` | refuses, naming `trigger db.u.trg` |
+
+On PostgreSQL 17, with the schema `db` holding the same tables, the binary
+plans `DROP TABLE "db"."u"` under `--exclude db.u.c` and `--exclude db.u.ix`,
+and `ptah-compat` refuses both. `schema diff` with the binary prints the drop,
+and with `ptah-compat` prints a warning instead.
+
+For this schema apply, `ptah-compat` exits `1` where the binary exits `0`. No
+variable restores the drop, because the drop removes what the selection asked
+to keep; exclude the whole table or database instead.
+
+**Evidence.** `integration/excludedschema/blocked_removal_e2e_test.go` and
+`integration/excludedschema/mysql_e2e_test.go`
 
 ## Not on this page
 
