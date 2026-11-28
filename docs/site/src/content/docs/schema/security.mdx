@@ -357,11 +357,13 @@ across native commands.
   not the view is updatable.
 - On MySQL and MariaDB the rules measure roles, the principals the role read
   covers. A user account that holds broad grants directly is not measured, and
-  neither is a MySQL role on a host other than `%`. Where a role holds such an
-  account, through `GRANT` of a login or of that role, or holds a name two
-  accounts share, the rules skip that role and every role that holds it. The
-  skip names the account, the roles, and why the read did not read every
-  privilege of the account; the other roles are measured.
+  neither is a MySQL role on a host other than `%`. A role that holds a login
+  on `%` is measured through what the login holds, since the read reads that
+  login as it reads a role. Where a role holds an account on another host,
+  through `GRANT` of a login or of a role, or holds a name two accounts share,
+  the rules skip that role and every role that holds it. The skip names the
+  account, the roles, and why the read did not read every privilege of the
+  account; the other roles are measured.
 - On MySQL a session's account and every role it has active share one lookup
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and

@@ -859,11 +859,26 @@ func TestValidate_FailurePathUnread(t *testing.T) {
 				`end the membership that passes legacy on, or leave the revoke out`,
 		},
 		{
-			name:  "mandatory roles the read named",
-			every: &catalog.EveryAccountUnread{Roles: []string{"mand", "mand6"}, Cause: "a role named PUBLIC hides which roles every account holds"},
-			want: `every account holds the roles mand, mand6 whose memberships the read does not state: ` +
-				`a role named PUBLIC hides which roles every account holds; ` +
-				`so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege`,
+			name:   "a mandatory role the read named and did not read",
+			unread: []catalog.UnreadRole{{Name: "mand6@localhost", Cause: cause}},
+			every:  &catalog.EveryAccountUnread{Roles: []string{"mand", "mand6@localhost"}, Cause: "a role named PUBLIC hides it"},
+			want: `every account holds mand6@localhost, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: leave the revoke out`,
+		},
+		{
+			name:        "a principal a mandatory role the read named holds",
+			memberships: []catalog.RoleMembership{{Role: "legacy", Member: "mand"}},
+			unread:      []catalog.UnreadRole{{Name: "legacy", Cause: cause}},
+			every:       &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: "a role named PUBLIC hides it"},
+			want: `every account holds legacy through mand, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: ` +
+				`end the membership that passes legacy on, or leave the revoke out`,
+		},
+		{
+			name:   "the revoke's own principal",
+			unread: []catalog.UnreadRole{{Name: "r2", Cause: cause}},
+			want: `the read did not read the privileges of role "r2" in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: leave the revoke out`,
 		},
 		{
 			name:  "mandatory roles the read could not name",
@@ -888,16 +903,87 @@ func TestValidate_FailurePathUnread(t *testing.T) {
 	}
 }
 
+// TestValidate_FailurePathMandatoryRoleCover refuses a revoke on a table
+// that a mandatory role the read named, beside a role named PUBLIC, keeps
+// through its own grant on the database or on the table: every account holds
+// that role, through no membership a statement can end.
+func TestValidate_FailurePathMandatoryRoleCover(t *testing.T) {
+	tests := []struct {
+		name  string
+		grant catalog.Grant
+		want  string
+	}{
+		{
+			name:  "a grant on the database",
+			grant: databaseGrant("mand", "SELECT"),
+			want: `mand holds SELECT ON d2\.\*, which gives role "r2" the privilege on table t3, ` +
+				`so a revoke on the table cannot take it: revoke SELECT ON d2\.\* from mand instead, ` +
+				`or grant the privilege on each table that needs it`,
+		},
+		{
+			// No membership passes mand on, so the remedy names none to end.
+			name:  "a grant on the table",
+			grant: catalog.Grant{Role: "mand", Privilege: "SELECT", ObjectType: "TABLE", Schema: "d2", ObjectName: "t3"},
+			want: `mand holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: ` +
+				`revoke SELECT ON t3 from mand instead`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			current := selecting(test.grant)
+			current.EveryAccountHoldsUnread = &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: "a role named PUBLIC hides it"}
+			current.PublicIsRole = true
+
+			err := validate("mysql", revokes("t3", "SELECT"), current)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// TestValidate_FailurePathPrincipalWord names the revoke's principal by what
+// the read says it is: a login where the read reads a login's grant to it,
+// and a principal where the read describes roles and none of that name.
+func TestValidate_FailurePathPrincipalWord(t *testing.T) {
+	tests := []struct {
+		name  string
+		login bool
+		roles []catalog.Role
+		want  string
+	}{
+		{name: "a login", login: true, roles: make([]catalog.Role, 0), want: `login "r2" holds SELECT ON d2\.\*, .*`},
+		{name: "a principal the read does not describe", roles: []catalog.Role{{Name: "other"}}, want: `principal "r2" holds SELECT ON d2\.\*, .*`},
+		{name: "a role the read describes", roles: []catalog.Role{{Name: "r2"}}, want: `role "r2" holds SELECT ON d2\.\*, .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			grant := databaseGrant("r2", "SELECT")
+			grant.Login = test.login
+			current := selecting(grant)
+			current.Roles = test.roles
+
+			err := validate("mysql", revokes("t3", "SELECT"), current)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
 // TestValidate_HappyPathUnread plans a revoke on a table whose role's holders
 // hold no principal the read did not read in full: one no holder holds, one
-// held through a membership the plan removes, and one held by a role named
-// PUBLIC, which is no holder of its own.
+// held through a membership the plan removes, one held by a role named
+// PUBLIC, which is no holder of its own, and one beside mandatory roles the
+// read named, which hold nothing on the table.
 func TestValidate_HappyPathUnread(t *testing.T) {
 	unread := []catalog.UnreadRole{{Name: "legacy", Cause: "it is a login"}}
 	tests := []struct {
 		name         string
 		desired      *schemamodel.Database
+		grants       []catalog.Grant
 		memberships  []catalog.RoleMembership
+		every        *catalog.EveryAccountUnread
 		publicIsRole bool
 	}{
 		{
@@ -916,12 +1002,19 @@ func TestValidate_HappyPathUnread(t *testing.T) {
 			name: "held by a role named PUBLIC", desired: revokes("t3", "SELECT"), publicIsRole: true,
 			memberships: []catalog.RoleMembership{{Role: "legacy", Member: "PUBLIC"}},
 		},
+		{
+			name: "beside mandatory roles the read named that hold nothing on the table", desired: revokes("t3", "SELECT"),
+			grants:       []catalog.Grant{{Role: "mand", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "oth6"}},
+			every:        &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: "a role named PUBLIC hides it"},
+			publicIsRole: true,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			current := holding(readHolding(nil), test.memberships...)
+			current := holding(selecting(test.grants...), test.memberships...)
 			current.UnreadRoles = unread
+			current.EveryAccountHoldsUnread = test.every
 			current.PublicIsRole = test.publicIsRole
 
 			c.Assert(validate("mysql", test.desired, current), qt.IsNil)

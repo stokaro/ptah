@@ -33,8 +33,9 @@ type databaseRows struct {
 	revoked map[string]map[string][]string
 }
 
-// readDatabaseRows reads every database-level row of every role, the rows on
-// a database's own name and the rows on a pattern alike, from source. A
+// readDatabaseRows reads every database-level row of every account
+// [readGrantee] names, every role and every login on host %, the rows on a
+// database's own name and the rows on a pattern alike, from source. A
 // source that reads the grant tables is MariaDB's
 // ([mysqlgrants.Options.MariaDB]).
 //
@@ -52,19 +53,16 @@ func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*dat
 	}
 	options.MariaDB = source.tables
 	rows := &databaseRows{options: options, held: make(map[string]map[string][]string)}
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
+	grantee := readGrantee(source)
 	if options.LiteralDatabaseNames {
-		rows.revoked, err = r.readPartialRevokes(ctx, qualifyPredicate(predicate, "u."))
+		rows.revoked, err = r.readPartialRevokes(ctx, grantee)
 		if err != nil {
 			return nil, err
 		}
 	}
-	query := databaseRowQuery(qualifyPredicate(predicate, "u."))
+	query := databaseRowQuery(grantee)
 	if source.tables {
-		query = mariaDBDatabaseRowQuery(qualifyPredicate(predicate, "u."), source.databaseColumns)
+		query = mariaDBDatabaseRowQuery(grantee, source.databaseColumns)
 	}
 	result, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -91,12 +89,12 @@ func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*dat
 // database-level grant row. It joins the complete account, as [grantQuery]
 // does, so a login that shares a role's user name on another host lends the
 // role none of its rows.
-func databaseRowQuery(rolePredicate string) string {
+func databaseRowQuery(grantee string) string {
 	return `
 		SELECT u.user AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
 		FROM information_schema.SCHEMA_PRIVILEGES AS sp
 		JOIN mysql.user AS u ON ` + granteeMatchesAccount("sp.GRANTEE") + `
-		WHERE ` + rolePredicate + `
+		WHERE ` + grantee + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
 }
@@ -111,7 +109,7 @@ func databaseRowQuery(rolePredicate string) string {
 // GRANTS prints the REVOKE, and a session with r active is refused with Error
 // 1142 on every table of app while it reads every other database. The global
 // grant itself, in mysql.user, says nothing of it.
-func (r *Reader) readPartialRevokes(ctx context.Context, rolePredicate string) (map[string]map[string][]string, error) {
+func (r *Reader) readPartialRevokes(ctx context.Context, grantee string) (map[string]map[string][]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.user AS role_name, restriction.database_name, privilege.name
 		FROM mysql.user AS u,
@@ -119,7 +117,7 @@ func (r *Reader) readPartialRevokes(ctx context.Context, rolePredicate string) (
 				database_name VARCHAR(64) PATH '$.Database',
 				privileges JSON PATH '$.Privileges')) AS restriction,
 			JSON_TABLE(restriction.privileges, '$[*]' COLUMNS (name VARCHAR(64) PATH '$')) AS privilege
-		WHERE `+rolePredicate+`
+		WHERE `+grantee+`
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, restriction.database_name, privilege.name`)
 	if err != nil {
@@ -180,14 +178,14 @@ func (d *databaseRows) withoutPartialRevokes(everywhere []catalog.WideGrant, dat
 // mariaDBDatabaseRowQuery is [databaseRowQuery] read from MariaDB's mysql.db,
 // as [grantSource] says why: a role that holds another lists the other's rows
 // as its own in SCHEMA_PRIVILEGES.
-func mariaDBDatabaseRowQuery(rolePredicate string, databaseColumns []globalTablePrivilege) string {
+func mariaDBDatabaseRowQuery(grantee string, databaseColumns []globalTablePrivilege) string {
 	return `
 		SELECT u.user AS role_name, granted.object_schema, granted.privilege
 		FROM (
 			` + mariaDBDatabasePrivilegeRows(databaseColumns) + `
 		) AS granted
 		JOIN mysql.user AS u ON u.user = granted.grantee_user AND u.host = granted.grantee_host
-		WHERE ` + rolePredicate + `
+		WHERE ` + grantee + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, granted.object_schema, granted.privilege`
 }

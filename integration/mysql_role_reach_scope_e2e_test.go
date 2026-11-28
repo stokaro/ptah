@@ -59,11 +59,11 @@ func roleLoginReads(c *qt.C, server mysqlFamilyServer, database, login, role str
 }
 
 // unreadLoginSkip is the reason the reach rules give for the role lr, which
-// holds the login legacy: the read reads the login's grants on the database
-// and not its global privileges.
-const unreadLoginSkip = "the read did not read every privilege of legacy, which lr can use: " +
-	"it is a login, and the read reads a login's grants on the databases it covers, " +
-	"not its global privileges or its grants on database name patterns; so their reach was not measured"
+// holds the login legacy on host localhost: the read reads no account on
+// another host.
+const unreadLoginSkip = "the read did not read every privilege of legacy@localhost, which lr can use: " +
+	"it is the account 'legacy'@'localhost', and the read reads the privileges of roles and of accounts on host % alone; " +
+	"so their reach was not measured"
 
 // reachSkips runs `ptah schema security` against dbURL and states the reach
 // rules it skipped for a reason naming a role whose name ends in suffix, one
@@ -203,15 +203,16 @@ func TestMySQLRoleNamedPublicReachE2E(t *testing.T) {
 }
 
 // TestMySQLReachSkipsTheRolesHoldingAnUnreadAccountE2E grants a role an
-// account the read does not read as a role, a locked user holding SELECT on
-// a whole database. The role's reach is not measured, and the skip names the
-// account and the role; another role on the server is measured as usual.
+// account the read does not read, a locked user on host localhost holding
+// SELECT on a whole database. The role's reach is not measured, and the skip
+// names the account and the role; another role on the server is measured as
+// usual.
 func TestMySQLReachSkipsTheRolesHoldingAnUnreadAccountE2E(t *testing.T) {
 	c := qt.New(t)
 	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
 	database := server.database(c, "unread_reach")
 	suffix := fmt.Sprintf("_%d", time.Now().UnixNano()%1_000_000_000_000)
-	legacy := granteeIdentifier("legacy"+suffix) + "@'%'"
+	legacy := granteeIdentifier("legacy"+suffix) + "@'localhost'"
 	holder, other := granteeIdentifier("lr"+suffix), granteeIdentifier("lother"+suffix)
 	c.Cleanup(func() {
 		_, err := server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+holder+", "+other)
@@ -240,6 +241,46 @@ func TestMySQLReachSkipsTheRolesHoldingAnUnreadAccountE2E(t *testing.T) {
 		"roles/read-reach: " + unreadLoginSkip,
 		"roles/write-reach: " + unreadLoginSkip,
 	})
+}
+
+// TestMySQLReachMeasuresTheRolesHoldingALoginOnHostPercentE2E grants a role
+// a login on host % holding SELECT on every database. The read reads the
+// login's global privileges as it reads a role's, so the role's reach is
+// measured through the login, and nothing is skipped: a session with the role
+// active reads every table. Without the login's global row the role is
+// skipped, or measured reaching nothing.
+func TestMySQLReachMeasuresTheRolesHoldingALoginOnHostPercentE2E(t *testing.T) {
+	c := qt.New(t)
+	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
+	database := server.database(c, "login_reach")
+	suffix := fmt.Sprintf("_%d", time.Now().UnixNano()%1_000_000_000_000)
+	legacy := granteeIdentifier("legacy"+suffix) + "@'%'"
+	holder := granteeIdentifier("lr" + suffix)
+	c.Cleanup(func() {
+		_, err := server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+holder)
+		c.Check(err, qt.IsNil)
+		_, err = server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+legacy)
+		c.Check(err, qt.IsNil)
+	})
+	partialRevokeExec(c, server, []string{
+		"CREATE TABLE " + granteeIdentifier(database) + ".a (id int PRIMARY KEY)",
+		"CREATE TABLE " + granteeIdentifier(database) + ".b (id int PRIMARY KEY)",
+		"CREATE TABLE " + granteeIdentifier(database) + ".c (id int PRIMARY KEY)",
+		"CREATE ROLE " + holder,
+		"CREATE USER " + legacy + " ACCOUNT LOCK",
+		"GRANT SELECT ON *.* TO " + legacy,
+		"GRANT " + legacy + " TO " + holder,
+	})
+	target := server.url("mysql", database)
+
+	lines := publicFindingLines(c, target, suffix)
+	skips := reachSkips(c, target, suffix)
+
+	c.Assert(roleLoginReads(c, server, database, "lrl"+suffix, holder), qt.Equals, 3)
+	c.Assert(slices.DeleteFunc(lines, func(line string) bool { return strings.HasPrefix(line, "ROL04 ") }), qt.DeepEquals, []string{
+		"roles/read-reach error lr 3/3 through=[legacy]",
+	})
+	c.Assert(skips, qt.HasLen, 0)
 }
 
 // TestMySQLReadRefusesOnlyTheNameTwoAccountsShareE2E creates the role

@@ -128,9 +128,10 @@ type Database struct {
 	PublicIsRole bool `json:"-"`
 	// UnreadRoles are the principals whose privileges the read did not read
 	// and that a role it describes holds, or PUBLIC holds, through
-	// RoleMemberships: on MySQL and MariaDB a role on a host other than the
-	// one a role name alone means, an account created as a login and granted
-	// as a role, or a name two accounts read as. A role that holds one,
+	// RoleMemberships: on MySQL and MariaDB a role, or an account created as
+	// a login and granted as a role, on a host other than the one a role name
+	// alone means, or a name two accounts read as. A MySQL login on that host
+	// is read as a role is, so it is not one, and what it holds counts. A role that holds one,
 	// directly, through a chain of memberships or through PUBLIC, holds
 	// privileges the read does not state. Sorted by name, and nil where there
 	// are none.
@@ -139,14 +140,18 @@ type Database struct {
 	// account holds roles whose memberships it does not state: MySQL's
 	// mandatory_roles where the read could not read the setting or a name in
 	// it, or where a role named PUBLIC leaves no member to state them for.
-	// Every role then holds privileges the read does not state. Nil where
-	// every account holds only what the read states.
+	// Where [EveryAccountUnread.Roles] names the roles, every account holds
+	// each of them and what each holds; where it names none, every role holds
+	// privileges the read cannot name. Nil where every account holds only
+	// what the read states.
 	EveryAccountHoldsUnread *EveryAccountUnread `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
 	// every table of one schema, through a grant that names no table, such as
 	// MySQL's `GRANT SELECT ON *.*`, Oracle's SELECT ANY TABLE, or Oracle's
-	// SELECT ANY TABLE ON SCHEMA. A REVOKE on one table takes none of them.
+	// SELECT ANY TABLE ON SCHEMA. On MySQL and MariaDB they include those of a
+	// login on host %, read as a role's. A REVOKE on one table takes none of
+	// them.
 	// Nil means the reader does not establish them, and an empty non-nil slice
 	// means it read them and found none.
 	WideGrants []WideGrant `json:"-"`
@@ -2000,7 +2005,9 @@ type UnreadRole struct {
 // whose memberships the read does not state ([Database.EveryAccountHoldsUnread]).
 type EveryAccountUnread struct {
 	// Roles are those roles, named as a role membership names them, where the
-	// read could name them, and nil where it could not. Sorted.
+	// read established which accounts they are, and nil where it could not.
+	// A role here that the read does not describe is in
+	// [Database.UnreadRoles] with its cause. Sorted.
 	Roles []string `json:"roles,omitempty"`
 	// Cause says why the read does not state the memberships, as a
 	// lower-case clause a note or a refusal prints after a colon.

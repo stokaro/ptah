@@ -37,7 +37,7 @@ func wideGrantsOf(patterns [][]driver.Value, patternErr error, next dbtest.Query
 			return dbtest.QueryResult{Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"}, Rows: patterns}, patternErr
 		case strings.Contains(query, "SELECT column_name"):
 			return dbtest.QueryResult{Columns: []string{"column_name"}, Rows: present}, nil
-		case strings.Contains(query, "Insert_priv = 'Y', Update_priv = 'Y'"):
+		case strings.Contains(query, "Insert_priv = 'Y', u.Update_priv = 'Y'"):
 			return dbtest.QueryResult{Columns: append([]string{"user"}, columns...), Rows: [][]driver.Value{held}}, nil
 		}
 		return next(query, args)
@@ -143,7 +143,7 @@ func TestReader_ReadsGrantsOnADatabasePattern_FailurePath(t *testing.T) {
 // mysql.user, and passes every other question to next.
 func refusingWideGrants(err error, next dbtest.QueryHandler) dbtest.QueryHandler {
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
-		if err != nil && strings.Contains(query, "Insert_priv = 'Y', Update_priv = 'Y'") {
+		if err != nil && strings.Contains(query, "Insert_priv = 'Y', u.Update_priv = 'Y'") {
 			return dbtest.QueryResult{}, err
 		}
 		return next(query, args)

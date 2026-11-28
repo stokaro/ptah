@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/defaultprivnote"
 	"ptah.run/internal/hashshard"
+	"ptah.run/internal/logingrants"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
@@ -120,6 +121,8 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// A role holding a principal whose privileges the read did not read in
 	// full holds privileges no statement printed below states.
 	unreadroles.Report(stderr, schema)
+	// No statement printed below creates a login, so none grants to one.
+	logingrants.Report(stderr, schema)
 
 	// An object of a kind Ptah does not model is in no statement printed below
 	// either.

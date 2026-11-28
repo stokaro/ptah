@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"strings"
 	"time"
@@ -18,7 +19,9 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/logingrants"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/portablegrants"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/shadowdb"
@@ -379,6 +382,10 @@ type CheckpointFromShadowOptions struct {
 	// database, and the remedies a refusal ends with; see
 	// [ptah.run/migration/shadow.ReplayTrust]. The zero value trusts nothing.
 	Trust shadow.ReplayTrust
+	// Diagnostics receives the notes about what the checkpoint leaves out of
+	// the replayed schema, such as the grants the history gives to MySQL and
+	// MariaDB logins, which no checkpoint statement creates. Nil writes none.
+	Diagnostics io.Writer
 }
 
 // GenerateCheckpointFromShadow replays the entire migration directory on a fresh
@@ -486,7 +493,11 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
-	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, shadowConn.Info().Dialect, opts.Runtime)
+	logingrants.Report(opts.Diagnostics, shadowSchema)
+	// The grants name the shadow database, which is never the database the
+	// checkpoint is replayed into; without the rewrite a replay elsewhere
+	// grants on objects that do not exist there.
+	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, portablegrants.Unqualified(shadowSchema), shadowConn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("capture checkpoint schema: %w", err)
 	}

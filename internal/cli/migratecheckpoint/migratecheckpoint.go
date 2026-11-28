@@ -233,6 +233,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		MigrationLockTimeout: migrationLockTimeout,
 		SchemaQualifier:      opts.qualifier,
 		Trust:                dbcli.ShadowReplayTrust(cmd.Context()),
+		Diagnostics:          cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return err

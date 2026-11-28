@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -61,7 +62,14 @@ func (r unreadHolderRun) spell(statement string) string {
 // apply runs `ptah schema apply` of unreadHolderSchema against the database.
 func (r unreadHolderRun) apply(c *qt.C) clirun.Result {
 	c.Helper()
-	file := writeDeclaredSchemaFile(c, "revoke.sql", strings.ReplaceAll(unreadHolderSchema, "{holder}", r.holder))
+	return r.applyRevoking(c, r.holder)
+}
+
+// applyRevoking runs `ptah schema apply` of unreadHolderSchema with principal
+// in the revoke.
+func (r unreadHolderRun) applyRevoking(c *qt.C, principal string) clirun.Result {
+	c.Helper()
+	file := writeDeclaredSchemaFile(c, "revoke.sql", strings.ReplaceAll(unreadHolderSchema, "{holder}", principal))
 	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: 2 * time.Minute},
 		"schema", "apply", "--db-url", r.server.url("mysql", r.database), "--schema-file", file, "--auto-approve")
 }
@@ -110,13 +118,6 @@ func TestSchemaApplyRefusesATableRevokeAnUnreadPrincipalKeepsE2E(t *testing.T) {
 			principal: "rh{sfx}@localhost",
 			wantCause: "it is the account 'rh{sfx}'@'localhost', and the read reads the privileges of roles and of accounts on host % alone",
 		},
-		{
-			name:      "a login on host %",
-			drop:      []string{"`lp{sfx}`@'%'"},
-			setup:     []string{"CREATE USER `lp{sfx}`@'%' ACCOUNT LOCK", "GRANT SELECT ON {db}.* TO `lp{sfx}`@'%'", "GRANT `lp{sfx}`@'%' TO {holder}"},
-			principal: "lp{sfx}",
-			wantCause: "it is a login, and the read reads a login's grants on the databases it covers, not its global privileges or its grants on database name patterns",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -149,6 +150,230 @@ func TestSchemaApplyRefusesATableRevokeAnUnreadPrincipalKeepsE2E(t *testing.T) {
 	}
 }
 
+// TestSchemaApplyRefusesATableRevokeALoginOnHostPercentKeepsE2E grants the
+// role holder a login on host % that holds SELECT on a through a grant on the
+// database, on every database, or on a database name pattern. A REVOKE of
+// SELECT on a from holder takes only holder's own grant, and a member of
+// holder still reads a through the login: measured on MySQL 8.4.13 and
+// 26.10.0. The read reads each of the login's grants as it reads a role's,
+// so the apply is refused naming the login's grant, holder keeps its grant,
+// and a member reads every table. Without the global and pattern rows the
+// read leaves out, the last two revokes are applied in silence.
+func TestSchemaApplyRefusesATableRevokeALoginOnHostPercentKeepsE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		// grant is the login's grant, and cover the grant the refusal names.
+		grant, cover string
+	}{
+		{name: "a grant on the database", grant: "SELECT ON {db}.*", cover: "SELECT ON {name}.*"},
+		{name: "a grant on every database", grant: "SELECT ON *.*", cover: "SELECT ON *.*"},
+		{name: "a grant on a database name pattern", grant: "SELECT ON `{prefix}%`.*", cover: "SELECT ON `{prefix}%`.*"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newUnreadHolderRun(c, "login_holder")
+			login := granteeIdentifier("lp"+run.suffix) + "@'%'"
+			c.Cleanup(func() {
+				_, err := run.server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+login)
+				c.Check(err, qt.IsNil)
+			})
+			spell := strings.NewReplacer("{db}", granteeIdentifier(run.database), "{name}", run.database,
+				"{prefix}", run.database[:len(run.database)-2])
+			partialRevokeExec(c, run.server, []string{
+				"CREATE USER " + login + " ACCOUNT LOCK",
+				"GRANT " + spell.Replace(test.grant) + " TO " + login,
+				"GRANT " + login + " TO " + granteeIdentifier(run.holder),
+			})
+			held := grantRows(c, run.server.admin, "SHOW GRANTS FOR "+granteeIdentifier(run.holder))
+			cover := spell.Replace(test.cover)
+
+			applied := run.apply(c)
+
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stderr, qt.Contains, fmt.Sprintf("lp%s holds %s, which gives role %q the privilege on table a, "+
+				"so a revoke on the table cannot take it: revoke %s from lp%s instead", run.suffix, cover, run.holder, cover, run.suffix))
+			c.Assert(grantRows(c, run.server.admin, "SHOW GRANTS FOR "+granteeIdentifier(run.holder)), qt.DeepEquals, held)
+			c.Assert(loginReads(c, run.server, run.database, "uhm"+run.suffix, []string{granteeIdentifier(run.holder)}), qt.Equals, 3)
+		})
+	}
+}
+
+// TestSchemaApplyRevokesATableGrantBesideALoginOnHostPercentE2E is the
+// control: the login on host % that holder holds holds SELECT on another
+// database alone. Nothing it holds covers a, so the revoke is applied and a
+// member of holder reads no table. Without the login's rows the read cannot
+// rule the login out, and the revoke is refused.
+func TestSchemaApplyRevokesATableGrantBesideALoginOnHostPercentE2E(t *testing.T) {
+	c := qt.New(t)
+	run := newUnreadHolderRun(c, "login_holder_control")
+	other := run.server.database(c, "login_holder_other")
+	login := granteeIdentifier("lo"+run.suffix) + "@'%'"
+	c.Cleanup(func() {
+		_, err := run.server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+login)
+		c.Check(err, qt.IsNil)
+	})
+	partialRevokeExec(c, run.server, []string{
+		"CREATE USER " + login + " ACCOUNT LOCK",
+		"GRANT SELECT ON " + granteeIdentifier(other) + ".* TO " + login,
+		"GRANT " + login + " TO " + granteeIdentifier(run.holder),
+	})
+
+	applied := run.apply(c)
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stdout, qt.Contains, "REVOKE SELECT ON `"+run.database+"`.`a` FROM `"+run.holder+"`")
+	c.Assert(loginReads(c, run.server, run.database, "uhm"+run.suffix, []string{granteeIdentifier(run.holder)}), qt.Equals, 0)
+}
+
+// TestSchemaApplyRefusesATableRevokeFromALoginThatKeepsItE2E revokes SELECT
+// on a from a login on host % that holds SELECT on a, and SELECT on every
+// database or on a database name pattern that reaches a. The REVOKE takes the
+// grant on a alone, and the login still reads a: measured on MySQL 8.4.13 and
+// 26.10.0 and MariaDB 11.8.9 and 12.3.3. The apply is refused naming the
+// login's wider grant, SHOW GRANTS for the login is unchanged, and the login
+// reads a. Without the global and pattern rows of a login, the revoke is
+// applied in silence.
+func TestSchemaApplyRefusesATableRevokeFromALoginThatKeepsItE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		// grant is the login's wider grant, and cover the grant the refusal
+		// names.
+		grant, cover string
+	}{
+		{name: "a grant on every database", grant: "SELECT ON *.*", cover: "SELECT ON *.*"},
+		{name: "a grant on a database name pattern", grant: "SELECT ON `{prefix}%`.*", cover: "SELECT ON `{prefix}%`.*"},
+	}
+	for _, engine := range mysqlFamilyShadowServers {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				server := newMySQLFamilyServer(c, engine.engine)
+				database := server.database(c, "login_self")
+				name := fmt.Sprintf("lgx_%d", time.Now().UnixNano()%1_000_000_000_000)
+				login := granteeIdentifier(name) + "@'%'"
+				c.Cleanup(func() {
+					_, err := server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+login)
+					c.Check(err, qt.IsNil)
+				})
+				spell := strings.NewReplacer("{prefix}", database[:len(database)-2])
+				partialRevokeExec(c, server, []string{
+					"CREATE TABLE " + granteeIdentifier(database) + ".a (id int PRIMARY KEY)",
+					"CREATE TABLE " + granteeIdentifier(database) + ".b (id int PRIMARY KEY)",
+					"CREATE TABLE " + granteeIdentifier(database) + ".c (id int PRIMARY KEY)",
+					"CREATE USER " + login + " IDENTIFIED BY 'login_self_pw'",
+					"GRANT " + spell.Replace(test.grant) + " TO " + login,
+					"GRANT SELECT ON " + granteeIdentifier(database) + ".a TO " + login,
+				})
+				held := grantRows(c, server.admin, "SHOW GRANTS FOR "+login)
+				cover := spell.Replace(test.cover)
+				file := writeDeclaredSchemaFile(c, "revoke.sql", strings.ReplaceAll(unreadHolderSchema, "{holder}", name))
+
+				applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: 2 * time.Minute},
+					"schema", "apply", "--db-url", server.url(engine.scheme, database), "--schema-file", file, "--auto-approve")
+
+				c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				c.Assert(applied.Stderr, qt.Contains, fmt.Sprintf("login %q holds %s, which covers table a, so a revoke on the table cannot take it: "+
+					"revoke %s from %q instead", name, cover, cover, name))
+				c.Assert(grantRows(c, server.admin, "SHOW GRANTS FOR "+login), qt.DeepEquals, held)
+				c.Assert(ownReads(c, server, name, "login_self_pw", readProbe(database, "a")), qt.IsNil)
+			})
+		}
+	}
+}
+
+// TestSchemaApplyRefusesATableRevokeFromALoginHoldingAnUnreadAccountE2E grants
+// the login lgy on host % the account 'rx'@'localhost', which holds SELECT on
+// every database, as a default role, beside lgy's own SELECT on a. A REVOKE of
+// SELECT on a from lgy takes the grant on a alone, and lgy still reads a
+// through rx: measured on MySQL 26.10.0. The read does not read rx, so the
+// apply is refused with the read's cause, lgy keeps its grant, `db read` names
+// rx as a principal lgy holds, and the revoke run by hand leaves lgy reading
+// a. Where the walk for unread principals starts at roles alone, no principal
+// it reaches holds rx, and the revoke is applied in silence.
+func TestSchemaApplyRefusesATableRevokeFromALoginHoldingAnUnreadAccountE2E(t *testing.T) {
+	c := qt.New(t)
+	run := newUnreadHolderRun(c, "login_unread")
+	name, principal := "lgy"+run.suffix, "rx"+run.suffix+"@localhost"
+	login := granteeIdentifier(name) + "@'%'"
+	account := granteeIdentifier("rx"+run.suffix) + "@'localhost'"
+	c.Cleanup(func() {
+		_, err := run.server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+login+", "+account)
+		c.Check(err, qt.IsNil)
+	})
+	partialRevokeExec(c, run.server, []string{
+		"CREATE USER " + account + " ACCOUNT LOCK",
+		"GRANT SELECT ON *.* TO " + account,
+		"CREATE USER " + login + " IDENTIFIED BY 'login_unread_pw'",
+		"GRANT " + account + " TO " + login,
+		"SET DEFAULT ROLE ALL TO " + login,
+		"GRANT SELECT ON " + granteeIdentifier(run.database) + ".a TO " + login,
+	})
+	held := grantRows(c, run.server.admin, "SHOW GRANTS FOR "+login)
+	cause := "it is the account 'rx" + run.suffix + "'@'localhost', and the read reads the privileges of roles and of accounts on host % alone"
+
+	applied := run.applyRevoking(c, name)
+	read := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: 2 * time.Minute},
+		"db", "read", "--db-url", run.server.url("mysql", run.database))
+	kept := grantRows(c, run.server.admin, "SHOW GRANTS FOR "+login)
+	partialRevokeExec(c, run.server, []string{"REVOKE SELECT ON " + granteeIdentifier(run.database) + ".a FROM " + login})
+	reads := ownReads(c, run.server, name, "login_unread_pw", readProbe(run.database, "a"))
+
+	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stderr, qt.Contains, fmt.Sprintf("login %q holds %s, whose privileges the read did not read in full: %s; "+
+		"so a revoke of SELECT on table a from %q cannot be shown to take the privilege: "+
+		"end the membership that passes %s on, or leave the revoke out", name, principal, cause, name, principal))
+	c.Assert(kept, qt.DeepEquals, held)
+	c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
+	c.Assert(read.Stderr, qt.Contains, principal+", held by "+name+": "+cause)
+	c.Assert(reads, qt.IsNil)
+}
+
+// TestSchemaApplyRefusesATableRevokeFromAnUnreadAccountE2E declares a revoke
+// from the account 'rh2'@'localhost' itself, which holds SELECT on a and which
+// the role holder holds. The read reads no privilege of an account on another
+// host, so a plan finds nothing to revoke and reads as synced, and the account
+// keeps SELECT on a. The apply is refused with the read's cause and the remedy
+// to leave the revoke out, and SHOW GRANTS for the account is unchanged.
+// Without the check of the revoke's own principal the apply exits 0.
+func TestSchemaApplyRefusesATableRevokeFromAnUnreadAccountE2E(t *testing.T) {
+	c := qt.New(t)
+	run := newUnreadHolderRun(c, "unread_self")
+	principal := "rh2" + run.suffix + "@localhost"
+	account := granteeIdentifier("rh2"+run.suffix) + "@'localhost'"
+	c.Cleanup(func() {
+		_, err := run.server.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+account)
+		c.Check(err, qt.IsNil)
+	})
+	partialRevokeExec(c, run.server, []string{
+		"CREATE USER " + account + " ACCOUNT LOCK",
+		"GRANT SELECT ON " + granteeIdentifier(run.database) + ".a TO " + account,
+		"GRANT " + account + " TO " + granteeIdentifier(run.holder),
+	})
+	held := grantRows(c, run.server.admin, "SHOW GRANTS FOR "+account)
+	cause := "it is the account 'rh2" + run.suffix + "'@'localhost', and the read reads the privileges of roles and of accounts on host % alone"
+
+	applied := run.applyRevoking(c, granteeIdentifier(principal))
+
+	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stderr, qt.Contains, fmt.Sprintf("the read did not read the privileges of principal %q in full: %s; "+
+		"so a revoke of SELECT on table a from %q cannot be shown to take the privilege: leave the revoke out", principal, cause, principal))
+	c.Assert(grantRows(c, run.server.admin, "SHOW GRANTS FOR "+account), qt.DeepEquals, held)
+}
+
+// ownReads runs probe in a session of login, and answers what the server
+// said.
+func ownReads(c *qt.C, server mysqlFamilyServer, login, password, probe string) error {
+	c.Helper()
+	config := server.config.Clone()
+	config.User, config.Passwd, config.DBName = login, password, ""
+	db, err := sql.Open("mysql", config.FormatDSN())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	_, err = db.ExecContext(c.Context(), probe)
+	return err
+}
+
 // TestSchemaApplyRevokesATableGrantNoUnreadPrincipalKeepsE2E is the control:
 // the role holder holds no other principal, so the revoke is applied and a
 // member of holder reads no table.
@@ -166,11 +391,11 @@ func TestSchemaApplyRevokesATableGrantNoUnreadPrincipalKeepsE2E(t *testing.T) {
 // TestSchemaApplyRefusesATableRevokeBesideARoleNamedPublicAndMandatoryRolesE2E
 // creates a MySQL role named PUBLIC beside the mandatory role mand6, which
 // holds SELECT on the whole database. A role named PUBLIC hides which roles
-// every account holds, so the read cannot state that every account holds
-// mand6, and a REVOKE of SELECT on a from holder takes only holder's own
-// grant: a member reads a through mand6 after SET ROLE ALL. The apply is
-// refused naming mand6, holder keeps its grant, a member reads every table,
-// and `db read` prints the cause as a note.
+// every account holds from the memberships a read records, so the read names
+// mand6 apart from them, and a REVOKE of SELECT on a from holder takes only
+// holder's own grant: a member reads a through mand6 after SET ROLE ALL. The
+// apply is refused naming mand6's grant, holder keeps its grant, a member
+// reads every table, and `db read` prints the cause as a note.
 func TestSchemaApplyRefusesATableRevokeBesideARoleNamedPublicAndMandatoryRolesE2E(t *testing.T) {
 	c := qt.New(t)
 	run := newUnreadHolderRun(c, "unread_mandatory")
@@ -192,10 +417,38 @@ func TestSchemaApplyRefusesATableRevokeBesideARoleNamedPublicAndMandatoryRolesE2
 		"db", "read", "--db-url", run.server.url("mysql", run.database))
 
 	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stderr, qt.Contains, "every account holds the roles "+mandatory+" whose memberships the read does not state: "+cause+
-		"; so a revoke of SELECT on table a from \""+run.holder+"\" cannot be shown to take the privilege")
+	c.Assert(applied.Stderr, qt.Contains, fmt.Sprintf("%s holds SELECT ON %s.*, which gives role %q the privilege on table a, "+
+		"so a revoke on the table cannot take it", mandatory, run.database, run.holder))
 	c.Assert(grantRows(c, run.server.admin, "SHOW GRANTS FOR "+granteeIdentifier(run.holder)), qt.DeepEquals, held)
 	c.Assert(loginReads(c, run.server, run.database, "uhm"+run.suffix, []string{granteeIdentifier(run.holder)}), qt.Equals, 3)
 	c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
 	c.Assert(read.Stderr, qt.Contains, "note: every account holds the roles "+mandatory+" whose memberships this read does not state: "+cause)
+}
+
+// TestSchemaApplyRevokesATableGrantBesideARoleNamedPublicAndMandatoryRolesE2E
+// is the control: the mandatory role mand7, beside a role named PUBLIC, holds
+// SELECT on another database alone. Every account holds mand7, and nothing it
+// holds covers a, so the revoke is applied and a member of holder reads no
+// table after SET ROLE ALL. Without the rule every table revoke is refused
+// here, since the read names the mandatory roles apart from the memberships.
+func TestSchemaApplyRevokesATableGrantBesideARoleNamedPublicAndMandatoryRolesE2E(t *testing.T) {
+	c := qt.New(t)
+	run := newUnreadHolderRun(c, "unread_mandatory_control")
+	other := run.server.database(c, "unread_mandatory_other")
+	mandatory := "mand7" + run.suffix
+	c.Cleanup(func() {
+		_, err := run.server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+granteeIdentifier(mandatory)+", PUBLIC")
+		c.Check(err, qt.IsNil)
+	})
+	partialRevokeExec(c, run.server, []string{
+		"CREATE ROLE PUBLIC, " + granteeIdentifier(mandatory),
+		"GRANT SELECT ON " + granteeIdentifier(other) + ".* TO " + granteeIdentifier(mandatory),
+	})
+	withMandatoryRoles(c, run.server, mandatory)
+
+	applied := run.apply(c)
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stdout, qt.Contains, "REVOKE SELECT ON `"+run.database+"`.`a` FROM `"+run.holder+"`")
+	c.Assert(loginReads(c, run.server, run.database, "uhm"+run.suffix, []string{granteeIdentifier(run.holder)}), qt.Equals, 0)
 }
