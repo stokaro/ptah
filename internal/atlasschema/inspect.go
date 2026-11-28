@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/fileplan"
 	"ptah.run/internal/hashshard"
+	"ptah.run/internal/logingrants"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolescope"
@@ -194,6 +195,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// through the built-in engines; the note is the only place it shows.
 	unreadtables.Report(opts.Diagnostics, schema)
 	unreadroles.Report(opts.Diagnostics, schema)
+	logingrants.Report(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.reportUnmodeled = true
 	validatedOpts.PrepareSchema = nil

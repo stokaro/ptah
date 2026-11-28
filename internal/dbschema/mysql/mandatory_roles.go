@@ -107,7 +107,6 @@ func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Name
 		}
 		if err != nil {
 			return mandatoryRoles{unread: &catalog.EveryAccountUnread{
-				Roles: mandatoryNames(accounts),
 				Cause: fmt.Sprintf("the read could not look up the mandatory role %s in mysql.user: %v", role.Grantee(), err),
 			}}, ctx.Err()
 		}
@@ -132,19 +131,6 @@ func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Name
 	}
 	slices.SortFunc(memberships, func(a, b catalog.RoleMembership) int { return cmp.Compare(a.Role, b.Role) })
 	return mandatoryRoles{memberships: memberships}, nil
-}
-
-// mandatoryNames is each account the setting names, named as a membership
-// names it ([mysqlgrants.Options.PrincipalName]), sorted and without repeats.
-// The read stopped before it could tell which of them exist, so a name may be
-// one no account has.
-func mandatoryNames(accounts []mysqlgrants.Account) []string {
-	names := make([]string, 0, len(accounts))
-	for _, account := range accounts {
-		names = append(names, mysqlgrants.Options{}.PrincipalName(account))
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
 }
 
 // mandatoryRoleHost finds the account as MySQL's mandatory-role cache does:

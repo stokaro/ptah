@@ -427,6 +427,15 @@ func unreadRoles(schema *catalog.Database) []string {
 			unread = append(unread, membership.Role)
 		}
 	}
+	// Every account holds the mandatory roles a read names beside a role
+	// named PUBLIC, through no membership it records.
+	if every := schema.EveryAccountHoldsUnread; every != nil {
+		for _, role := range every.Roles {
+			if !described[role] {
+				unread = append(unread, role)
+			}
+		}
+	}
 	slices.Sort(unread)
 	return slices.Compact(unread)
 }

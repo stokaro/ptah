@@ -139,8 +139,10 @@ type Database struct {
 	// account holds roles whose memberships it does not state: MySQL's
 	// mandatory_roles where the read could not read the setting or a name in
 	// it, or where a role named PUBLIC leaves no member to state them for.
-	// Every role then holds privileges the read does not state. Nil where
-	// every account holds only what the read states.
+	// Where [EveryAccountUnread.Roles] names the roles, every account holds
+	// each of them and what each holds; where it names none, every role holds
+	// privileges the read cannot name. Nil where every account holds only
+	// what the read states.
 	EveryAccountHoldsUnread *EveryAccountUnread `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
@@ -2000,7 +2002,9 @@ type UnreadRole struct {
 // whose memberships the read does not state ([Database.EveryAccountHoldsUnread]).
 type EveryAccountUnread struct {
 	// Roles are those roles, named as a role membership names them, where the
-	// read could name them, and nil where it could not. Sorted.
+	// read established which accounts they are, and nil where it could not.
+	// A role here that the read does not describe is in
+	// [Database.UnreadRoles] with its cause. Sorted.
 	Roles []string `json:"roles,omitempty"`
 	// Cause says why the read does not state the memberships, as a
 	// lower-case clause a note or a refusal prints after a colon.

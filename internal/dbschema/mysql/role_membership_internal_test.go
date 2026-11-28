@@ -176,13 +176,15 @@ func TestReadRoleMemberships_Collision(t *testing.T) {
 // TestUnreadRoles finds each principal the read does not describe that a
 // described role holds, or PUBLIC holds where it stands for every account,
 // whose privileges the read then did not read: a MySQL role on another host,
-// or a login granted as a role.
+// or a login granted as a role, and each mandatory role a read names beside a
+// role named PUBLIC that it does not describe.
 func TestUnreadRoles(t *testing.T) {
 	roles := []catalog.Role{{Name: "reader"}, {Name: "writer"}}
 	tests := []struct {
 		name         string
 		memberships  []catalog.RoleMembership
 		publicIsRole bool
+		every        *catalog.EveryAccountUnread
 		want         []string
 	}{
 		{name: "between described roles", memberships: []catalog.RoleMembership{{Role: "reader", Member: "writer"}}},
@@ -201,11 +203,18 @@ func TestUnreadRoles(t *testing.T) {
 			publicIsRole: true,
 		},
 		{name: "a role on another host held by a login", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "app@%"}}},
+		{
+			name: "mandatory roles beside a role named PUBLIC", publicIsRole: true,
+			every: &catalog.EveryAccountUnread{Roles: []string{"mand@localhost", "reader"}, Cause: "a role named PUBLIC hides them"},
+			want:  []string{"mand@localhost"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &catalog.Database{Roles: roles, RoleMemberships: test.memberships, PublicIsRole: test.publicIsRole}
+			schema := &catalog.Database{
+				Roles: roles, RoleMemberships: test.memberships, PublicIsRole: test.publicIsRole, EveryAccountHoldsUnread: test.every,
+			}
 
 			c.Assert(unreadRoles(schema), qt.DeepEquals, test.want)
 		})
@@ -444,13 +453,13 @@ func TestReadMandatoryRoles_GrammarAndDuplicates(t *testing.T) {
 // TestReadMandatoryRoles_Unread leaves the mandatory roles unread, rather than
 // failing the read, where the setting or an account in it cannot be read, or
 // the server's version does not say which account-list grammar it applies.
-// Each records its cause, and the roles the setting names where the read got
-// that far.
+// Each records its cause, and names no roles: a name the read could not look
+// up may be no account, so a refusal must not take it as one every account
+// holds.
 func TestReadMandatoryRoles_Unread(t *testing.T) {
 	tests := []struct {
 		name, version, refused string
 		wantCause              string
-		wantRoles              []string
 	}{
 		{
 			name: "the setting", version: "8.4.13", refused: "@@GLOBAL.mandatory_roles",
@@ -459,7 +468,6 @@ func TestReadMandatoryRoles_Unread(t *testing.T) {
 		{
 			name: "an account", version: "8.4.13", refused: "FROM mysql.user",
 			wantCause: `the read could not look up the mandatory role 'mand'@'%' in mysql\.user: Error 1142 \(42000\): SELECT command denied`,
-			wantRoles: []string{"mand"},
 		},
 		{
 			name: "an unrecognized version", version: "unknown",
@@ -477,7 +485,7 @@ func TestReadMandatoryRoles_Unread(t *testing.T) {
 			c.Assert(got.memberships, qt.IsNil)
 			c.Assert(got.unread, qt.IsNotNil)
 			c.Assert(got.unread.Cause, qt.Matches, test.wantCause)
-			c.Assert(got.unread.Roles, qt.DeepEquals, test.wantRoles)
+			c.Assert(got.unread.Roles, qt.IsNil)
 		})
 	}
 }

@@ -56,9 +56,13 @@ func Report(w io.Writer, schema *catalog.Database) {
 }
 
 // holdersOf names the members schema records holding name directly, sorted,
-// with PUBLIC as every account where it is not a role of that name.
+// with PUBLIC as every account where it is not a role of that name, and every
+// account for a role [catalog.EveryAccountUnread.Roles] names.
 func holdersOf(schema *catalog.Database, name string) string {
 	var members []string
+	if every := schema.EveryAccountHoldsUnread; every != nil && slices.Contains(every.Roles, name) {
+		members = append(members, "every account")
+	}
 	for _, membership := range schema.RoleMemberships {
 		if membership.Role != name {
 			continue

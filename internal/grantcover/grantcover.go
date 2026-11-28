@@ -285,9 +285,13 @@ func removedFromTable(desired *schemamodel.Database, grant catalog.Grant, table 
 // the table between the two statements. Where PUBLIC is a role of that name
 // ([catalog.Database.PublicIsRole]), it is no holder of its own.
 //
-// Each holder maps to the member it is held through: empty for role and
-// PUBLIC, and for any other holder a holder that holds it directly.
-func holders(current *catalog.Database, role string, memberships membershipplan.Declared) map[string]string {
+// Every account holds the roles [catalog.EveryAccountUnread.Roles] names, the
+// MySQL mandatory roles a read found beside a role named PUBLIC, so each is a
+// holder too, and so is what it holds. Measured on MySQL 26.10.0 with the
+// mandatory role mand holding SELECT on the database of t1 and the role
+// PUBLIC beside it: after REVOKE SELECT ON t1 FROM r, a login holding r reads
+// t1 once SET ROLE ALL makes mand active.
+func holders(current *catalog.Database, role string, memberships membershipplan.Declared) map[string]holder {
 	held := make(map[string][]string)
 	for _, membership := range current.RoleMemberships {
 		if memberships.Fate(current, membership) != membershipplan.Removed {
@@ -297,23 +301,45 @@ func holders(current *catalog.Database, role string, memberships membershipplan.
 	for key := range memberships.Stated() {
 		held[key.Member] = append(held[key.Member], key.Role)
 	}
-	seen := map[string]string{role: ""}
+	seen := map[string]holder{role: {}}
 	queue := []string{role}
+	everyone := func(name string) {
+		if _, reached := seen[name]; !reached {
+			seen[name] = holder{everyAccount: true}
+			queue = append(queue, name)
+		}
+	}
 	if !current.PublicIsRole {
-		seen[publicGrantee] = ""
-		queue = append(queue, publicGrantee)
+		everyone(publicGrantee)
+	}
+	if unread := current.EveryAccountHoldsUnread; unread != nil {
+		for _, name := range unread.Roles {
+			everyone(name)
+		}
 	}
 	for len(queue) > 0 {
 		member := queue[0]
 		queue = queue[1:]
 		for _, granted := range held[member] {
 			if _, reached := seen[granted]; !reached {
-				seen[granted] = member
+				seen[granted] = holder{through: member, everyAccount: seen[member].everyAccount}
 				queue = append(queue, granted)
 			}
 		}
 	}
 	return seen
+}
+
+// holder is how a holder of a revoke's role holds its privileges
+// ([holders]).
+type holder struct {
+	// through is the holder that holds this one directly, and empty for the
+	// revoke's role and for a holder every account holds through no
+	// membership: PUBLIC, and a role [catalog.EveryAccountUnread.Roles] names.
+	through string
+	// everyAccount is true where every account holds it, through no
+	// membership or through a chain of them from such a holder.
+	everyAccount bool
 }
 
 // everyAccount reports whether grantee is PUBLIC, every account's grantee,
@@ -422,11 +448,15 @@ func planned(declared schemamodel.Grant, current *catalog.Database, privileges [
 // plan finds nothing under the table's name to revoke and reads as synced,
 // and a member of the role keeps the privilege.
 //
-// A revoke is refused too where a holder of the revoke's role, through the
-// memberships the plan keeps, holds privileges the read does not state
-// ([catalog.Database.UnreadRoles]), or where every account does
-// ([catalog.Database.EveryAccountHoldsUnread]): no cover can be ruled out
-// then, and a revoke planned in silence can leave a member reading the table.
+// A revoke is refused too where the revoke's principal, or a holder of it
+// through the memberships the plan keeps, is a principal whose privileges the
+// read did not read in full ([catalog.Database.UnreadRoles]), or where every
+// account holds roles the read cannot name
+// ([catalog.Database.EveryAccountHoldsUnread] with no
+// [catalog.EveryAccountUnread.Roles]): no cover can be ruled out then, and a
+// revoke planned in silence can leave a member reading the table. Where the
+// read names those roles, each is a holder ([holders]) and refuses the revoke
+// only through a grant that covers the table or a principal it holds.
 // Measured on MySQL 26.10.0: with the role 'nm@localhost'@'%' holding SELECT
 // on t1 beside the login 'nm'@'localhost', the role nmh holding it and
 // SELECT on t1, and the login nmu holding nmh, REVOKE SELECT ON t1 FROM nmh
@@ -442,14 +472,19 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 		if revoke.OnTable == "" {
 			continue
 		}
-		problems = append(problems, unreadHolderErrs(current, revoke, target)...)
+		role := target.Semantics.StoredName(revoke.Role)
+		holding := holders(current, role, target.Memberships)
+		kind := principalKind(desired, current, role)
+		problems = append(problems, unreadHolderErrs(current, revoke, kind, role, holding)...)
 		covers, _ := Find(desired, current, revoke.Role, revoke.Privileges, revoke.OnTable, target)
 		for _, cover := range covers {
+			held := holding[cover.Grantee]
 			problems = append(problems, refused{
 				revoke:       revoke,
+				kind:         kind,
 				cover:        cover,
-				own:          cover.Grantee == target.Semantics.StoredName(revoke.Role),
-				everyAccount: everyAccount(current, cover.Grantee),
+				own:          cover.Grantee == role,
+				everyAccount: everyAccount(current, cover.Grantee) || (held.everyAccount && held.through == ""),
 			}.err())
 		}
 	}
@@ -457,55 +492,77 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 }
 
 // unreadHolderErrs refuses revoke where every account holds roles the read
-// does not state, and once for each principal the read did not read in full
-// that a holder of revoke's role holds, as [Validate] says.
-func unreadHolderErrs(current *catalog.Database, revoke schemamodel.Grant, target Target) []error {
+// cannot name, and once for each principal the read did not read in full that
+// is revoke's principal role or one of its holders in holding, as [Validate]
+// says. kind is the word for role in a refusal ([principalKind]).
+func unreadHolderErrs(current *catalog.Database, revoke schemamodel.Grant, kind, role string, holding map[string]holder) []error {
 	var problems []error
 	what := fmt.Sprintf("a revoke of %s on table %s from %q", strings.Join(revoke.Privileges, ", "), revoke.OnTable, revoke.Role)
-	if unread := current.EveryAccountHoldsUnread; unread != nil {
-		held := "roles"
-		if len(unread.Roles) > 0 {
-			held = "the roles " + strings.Join(unread.Roles, ", ")
-		}
+	if unread := current.EveryAccountHoldsUnread; unread != nil && len(unread.Roles) == 0 {
 		problems = append(problems, fmt.Errorf(
-			"every account holds %s whose memberships the read does not state: %s; so %s cannot be shown to take the privilege",
-			held, unread.Cause, what))
+			"every account holds roles whose memberships the read does not state: %s; so %s cannot be shown to take the privilege",
+			unread.Cause, what))
 	}
-	if len(current.UnreadRoles) == 0 {
-		return problems
-	}
-	role := target.Semantics.StoredName(revoke.Role)
-	holding := holders(current, role, target.Memberships)
 	for _, unread := range current.UnreadRoles {
-		member, held := holding[unread.Name]
-		if !held || unread.Name == role {
+		held, holds := holding[unread.Name]
+		if !holds {
 			continue
 		}
-		holder := fmt.Sprintf("role %q holds %s", revoke.Role, unread.Name)
+		subject := fmt.Sprintf("%s %q holds %s,", kind, revoke.Role, unread.Name)
 		remedy := "end the membership that passes " + unread.Name + " on, or leave the revoke out"
 		switch {
-		case member == publicGrantee && !current.PublicIsRole:
-			holder = "every account holds " + unread.Name
+		case unread.Name == role:
+			subject = fmt.Sprintf("%s %q is a principal", kind, revoke.Role)
 			remedy = "leave the revoke out"
-		case member != role:
-			holder = fmt.Sprintf("role %q holds %s through %s", revoke.Role, unread.Name, member)
+		case held.everyAccount && held.through == "", held.everyAccount && held.through == publicGrantee:
+			subject = "every account holds " + unread.Name + ","
+			remedy = "leave the revoke out"
+		case held.everyAccount:
+			subject = fmt.Sprintf("every account holds %s through %s,", unread.Name, held.through)
+		case held.through != role:
+			subject = fmt.Sprintf("%s %q holds %s through %s,", kind, revoke.Role, unread.Name, held.through)
 		}
 		problems = append(problems, fmt.Errorf(
-			"%s, whose privileges the read did not read in full: %s; so %s cannot be shown to take the privilege: %s",
-			holder, unread.Cause, what, remedy))
+			"%s whose privileges the read did not read in full: %s; so %s cannot be shown to take the privilege: %s",
+			subject, unread.Cause, what, remedy))
 	}
 	return problems
+}
+
+// principalKind is the word a refusal uses for the principal name: "login"
+// where current reads a login's grant to it ([catalog.Grant.Login]), and
+// "principal" where current describes roles and neither it nor desired
+// describes one of that name, nor is it PUBLIC. Anything else is "role", the
+// declaration's own word: a read that describes no roles cannot tell a role
+// from another principal.
+func principalKind(desired *schemamodel.Database, current *catalog.Database, name string) string {
+	described := func() bool {
+		return strings.EqualFold(name, publicGrantee) ||
+			slices.ContainsFunc(current.Roles, func(role catalog.Role) bool { return role.Name == name }) ||
+			desired != nil && slices.ContainsFunc(desired.Roles, func(role schemamodel.Role) bool { return role.Name == name })
+	}
+	switch {
+	case slices.ContainsFunc(current.Grants, func(grant catalog.Grant) bool { return grant.Login && grant.Role == name }):
+		return "login"
+	case current.Roles != nil && !described():
+		return "principal"
+	default:
+		return "role"
+	}
 }
 
 // refused is a declared revoke on a table and one grant that keeps what it
 // names.
 type refused struct {
 	revoke schemamodel.Grant
-	cover  Cover
-	// own reports a cover the revoke's role holds itself.
+	// kind is the word for the revoke's principal ([principalKind]).
+	kind  string
+	cover Cover
+	// own reports a cover the revoke's principal holds itself.
 	own bool
-	// everyAccount reports a cover PUBLIC holds where it is every account's
-	// grantee.
+	// everyAccount reports a cover every account holds through no membership
+	// a statement can end: PUBLIC where it is every account's grantee, and a
+	// role [catalog.EveryAccountUnread.Roles] names.
 	everyAccount bool
 }
 
@@ -514,51 +571,51 @@ type refused struct {
 // the whole database.
 func (r refused) err() error {
 	revoke, cover, own := r.revoke, r.cover, r.own
-	role := revoke.Role
+	principal := fmt.Sprintf("%s %q", r.kind, revoke.Role)
 	if cover.OnTable {
 		return r.tableErr()
 	}
 	if cover.Declared && own {
 		return fmt.Errorf(
-			"the schema grants %s to role %q, which covers table %s, so a revoke on the table cannot take it: "+
+			"the schema grants %s to %s, which covers table %s, so a revoke on the table cannot take it: "+
 				"grant the privilege on each table that needs it instead of on the database",
-			cover.Grant, role, revoke.OnTable)
+			cover.Grant, principal, revoke.OnTable)
 	}
 	if cover.Declared {
 		return fmt.Errorf(
-			"the schema grants %s to %s, which gives role %q the privilege on table %s, so a revoke on the table cannot take it: "+
+			"the schema grants %s to %s, which gives %s the privilege on table %s, so a revoke on the table cannot take it: "+
 				"grant the privilege on each table that needs it instead of on the database",
-			cover.Grant, cover.Grantee, role, revoke.OnTable)
+			cover.Grant, cover.Grantee, principal, revoke.OnTable)
 	}
 	if cover.AlsoDeclared && own {
 		return fmt.Errorf(
-			"role %q holds %s, which the schema grants too and which covers table %s, so a revoke on the table cannot take it: "+
+			"%s holds %s, which the schema grants too and which covers table %s, so a revoke on the table cannot take it: "+
 				"grant the privilege on each table that needs it instead of on the database",
-			role, cover.Grant, revoke.OnTable)
+			principal, cover.Grant, revoke.OnTable)
 	}
 	if cover.AlsoDeclared {
 		return fmt.Errorf(
-			"%s holds %s, which the schema grants too and which gives role %q the privilege on table %s, "+
+			"%s holds %s, which the schema grants too and which gives %s the privilege on table %s, "+
 				"so a revoke on the table cannot take it: grant the privilege on each table that needs it instead of on the database",
-			cover.Grantee, cover.Grant, role, revoke.OnTable)
+			cover.Grantee, cover.Grant, principal, revoke.OnTable)
 	}
 	if own {
 		return fmt.Errorf(
-			"role %q holds %s, which covers table %s, so a revoke on the table cannot take it: "+
+			"%s holds %s, which covers table %s, so a revoke on the table cannot take it: "+
 				"revoke %s from %q instead, or grant the privilege on each table that needs it",
-			role, cover.Grant, revoke.OnTable, cover.Grant, role)
+			principal, cover.Grant, revoke.OnTable, cover.Grant, revoke.Role)
 	}
 	return fmt.Errorf(
-		"%s holds %s, which gives role %q the privilege on table %s, so a revoke on the table cannot take it: "+
+		"%s holds %s, which gives %s the privilege on table %s, so a revoke on the table cannot take it: "+
 			"revoke %s from %s instead, or grant the privilege on each table that needs it",
-		cover.Grantee, cover.Grant, role, revoke.OnTable, cover.Grant, cover.Grantee)
+		cover.Grantee, cover.Grant, principal, revoke.OnTable, cover.Grant, cover.Grantee)
 }
 
 // tableErr is [refused.err] for a grant on the table itself, which another
 // grantee holds or the schema grants to one.
 func (r refused) tableErr() error {
 	revoke, cover := r.revoke, r.cover
-	role := revoke.Role
+	principal := fmt.Sprintf("%s %q", r.kind, revoke.Role)
 	// PUBLIC is every role's, through no membership a statement can end.
 	membership := ", or end the membership that passes it on"
 	if r.everyAccount {
@@ -567,19 +624,19 @@ func (r refused) tableErr() error {
 	switch {
 	case cover.Declared:
 		return fmt.Errorf(
-			"the schema grants %s to %s, which gives role %q the privilege on table %s, so a revoke from %q cannot take it: "+
+			"the schema grants %s to %s, which gives %s the privilege on table %s, so a revoke from %q cannot take it: "+
 				"leave the grant out%s",
-			cover.Grant, cover.Grantee, role, revoke.OnTable, role, membership)
+			cover.Grant, cover.Grantee, principal, revoke.OnTable, revoke.Role, membership)
 	case cover.AlsoDeclared:
 		return fmt.Errorf(
-			"%s holds %s, which the schema grants too and which gives role %q the privilege on table %s, "+
+			"%s holds %s, which the schema grants too and which gives %s the privilege on table %s, "+
 				"so a revoke from %q cannot take it: leave the grant out%s",
-			cover.Grantee, cover.Grant, role, revoke.OnTable, role, membership)
+			cover.Grantee, cover.Grant, principal, revoke.OnTable, revoke.Role, membership)
 	default:
 		return fmt.Errorf(
-			"%s holds %s, which gives role %q the privilege on table %s, so a revoke from %q cannot take it: "+
+			"%s holds %s, which gives %s the privilege on table %s, so a revoke from %q cannot take it: "+
 				"revoke %s from %s instead%s",
-			cover.Grantee, cover.Grant, role, revoke.OnTable, role, cover.Grant, cover.Grantee, membership)
+			cover.Grantee, cover.Grant, principal, revoke.OnTable, revoke.Role, cover.Grant, cover.Grantee, membership)
 	}
 }
 

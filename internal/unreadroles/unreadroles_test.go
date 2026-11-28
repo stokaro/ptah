@@ -41,6 +41,17 @@ func TestReport_HappyPath(t *testing.T) {
 				"  rh@localhost, held by every account: it is the account 'rh'@'localhost'\n",
 		},
 		{
+			name: "a mandatory role beside a role named PUBLIC",
+			schema: catalog.Database{
+				PublicIsRole:            true,
+				EveryAccountHoldsUnread: &catalog.EveryAccountUnread{Roles: []string{"mand6@localhost"}, Cause: "a role named PUBLIC hides them"},
+				UnreadRoles:             []catalog.UnreadRole{{Name: "mand6@localhost", Cause: "it is the account 'mand6'@'localhost'"}},
+			},
+			want: "note: every account holds the roles mand6@localhost whose memberships this read does not state: a role named PUBLIC hides them\n" +
+				"note: 1 principal a role holds whose privileges this read did not read in full: " +
+				"mand6@localhost, held by every account: it is the account 'mand6'@'localhost'\n",
+		},
+		{
 			name: "a principal a role named PUBLIC holds",
 			schema: catalog.Database{
 				PublicIsRole:    true,
