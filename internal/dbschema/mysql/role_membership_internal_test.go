@@ -3,7 +3,9 @@ package mysql
 // White-box testing required: readRoleMemberships and the catalog discovery it
 // depends on are unexported, and the fact under test is which table each engine
 // records the role graph in. Reaching them through ReadSchema would mean
-// scripting every other catalog query to observe this one.
+// scripting every other catalog query to observe this one. The same holds for
+// the steps that classify what the read found: which grantee is a login, which
+// principal is unread, and which name is refused.
 
 import (
 	"context"
@@ -206,6 +208,39 @@ func TestUnreadRoles(t *testing.T) {
 			schema := &catalog.Database{Roles: roles, RoleMemberships: test.memberships, PublicIsRole: test.publicIsRole}
 
 			c.Assert(unreadRoles(schema), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestMarkLoginGrants marks a grant whose grantee is no role the read
+// describes as a login's. MariaDB's PUBLIC, read in upper case, is every
+// account's grantee; a MariaDB login named public is a login, and on MySQL a
+// grantee named PUBLIC that no role has is a login too.
+func TestMarkLoginGrants(t *testing.T) {
+	roles := []catalog.Role{{Name: "reader"}}
+	tests := []struct {
+		name    string
+		grantee string
+		mariaDB bool
+		want    bool
+	}{
+		{name: "a MySQL role", grantee: "reader"},
+		{name: "a MySQL login", grantee: "app", want: true},
+		{name: "a MySQL login named PUBLIC", grantee: "PUBLIC", want: true},
+		{name: "a MariaDB role", grantee: "reader", mariaDB: true},
+		{name: "a MariaDB login", grantee: "app", mariaDB: true, want: true},
+		{name: "MariaDB's PUBLIC", grantee: "PUBLIC", mariaDB: true},
+		{name: "a MariaDB login named public", grantee: "public", mariaDB: true, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			grants := []catalog.Grant{{Role: test.grantee, Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"}}
+
+			marked := markLoginGrants(grants, roles, test.mariaDB)
+
+			c.Assert(marked, qt.HasLen, 1)
+			c.Assert(marked[0].Login, qt.Equals, test.want)
 		})
 	}
 }

@@ -2024,6 +2024,15 @@ type Grant struct {
 	// a column row of another state under it holds for the other columns only,
 	// so it is reported as the privilege on each of them.
 	Column string `json:"column,omitempty"`
+
+	// Login marks a privilege held by an account the read does not describe
+	// as a role: on MySQL and MariaDB a login on host %, which a declaration
+	// names as a grantee the way it names a role. The row is reading context.
+	// A comparison reads it so that a declared grant the login holds is not
+	// planned again and a revoke the declaration writes reaches it, and never
+	// removes it because the other side lacks it. A description leaves it
+	// out, since no statement it prints creates the login.
+	Login bool `json:"login,omitempty"`
 }
 
 // OwnerDefault reports whether the row is a privilege an object's owner holds

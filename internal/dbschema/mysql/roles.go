@@ -183,6 +183,31 @@ func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSour
 	return grants, nil
 }
 
+// markLoginGrants marks each grant whose grantee is no role of roles as a
+// login's ([catalog.Grant.Login]). On MySQL and MariaDB a grantee on host %
+// is a role or a login, and the read reads both: a declared grant to a login
+// it holds is then not planned again, and its rollback does not revoke what the
+// login held before. Marked, a login's grant is left out of a description and
+// out of what a comparison removes: measured on MySQL 8.4.13 and 26.10.0 and
+// MariaDB 11.8.9 and 12.3.3, after CREATE USER app and GRANT SELECT, INSERT ON
+// rva.* TO app, a comparison of rva with a database holding the same tables
+// otherwise plans REVOKE INSERT ON rva.* FROM app, and `ptah db read` prints
+// the GRANT with no statement creating app. MariaDB's PUBLIC is every
+// account's grantee and no login. It reads as PUBLIC in upper case, and a
+// login may be named public: MariaDB 11.8.9 and 12.3.3 accept CREATE USER
+// 'public'@'%', so the name is matched exactly, as [withoutPublic] matches it.
+func markLoginGrants(grants []catalog.Grant, roles []catalog.Role, mariaDB bool) []catalog.Grant {
+	isRole := make(map[string]bool, len(roles))
+	for _, role := range roles {
+		isRole[role.Name] = true
+	}
+	for index := range grants {
+		grantee := grants[index].Role
+		grants[index].Login = !isRole[grantee] && !(mariaDB && grantee == publicGrantee)
+	}
+	return grants
+}
+
 // A MariaDB bare grantee names the role when one has that name, and otherwise
 // the login on host %. A login that shares a role's name must not contribute
 // its privileges to the role. Account names compare by bytes, including case.
@@ -290,7 +315,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
-	schema.Grants = grants
+	schema.Grants = markLoginGrants(grants, roles, account.mariaDB)
 
 	memberships, err := r.readRoleMemberships(ctx, names)
 	if err != nil {

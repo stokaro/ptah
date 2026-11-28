@@ -1501,8 +1501,13 @@ name patterns.
 Database, table and column grants to a login on host `%` are read and compared
 too, without declaring or managing the login as a role. A generated migration
 adds only the privileges the login lacks, so its down file leaves preexisting
-grants and their grant option in place. On MariaDB a bare grantee names a role
-when that role exists and the login on `%` otherwise; the login's grants
+grants and their grant option in place. A login's grant is removed only by a
+`REVOKE` the schema writes. No description declares a login, so `ptah db read`
+and `ptah migrations checkpoint` print no grant to one, and a comparison of two
+databases plans no `REVOKE` from a login whose grants the other database lacks.
+A table revoke is still checked against them: a login's grant on the database
+keeps the privilege, and the revoke is refused. On MariaDB a bare grantee names
+a role when that role exists and the login on `%` otherwise; the login's grants
 never count as the role's.
 A grant declaration names a bare principal. Grants to accounts on other hosts
 remain separate and are not described under that bare name.
