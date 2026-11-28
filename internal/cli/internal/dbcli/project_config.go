@@ -444,10 +444,12 @@ func ChecksUnusedDevURL(cmd *cobra.Command, flagName string) bool {
 // when the flag or its variable set it, else the project's list, parsed by
 // [ParseSchemas]. The project's names go through [JoinSchemas], so a name with
 // spaces around it or a comma in it reaches the command as the project wrote
-// it. A malformed --schemas value is the error.
-func EffectiveSchemas(cmd *cobra.Command, flagValue string, project projectconfig.Value[[]string]) ([]string, error) {
+// it. A malformed --schemas value is the error. The live URL is checked
+// against that effective selection before connecting, as [ParseSchemasForURLs]
+// checks a flag value on a verb that reads no project configuration.
+func EffectiveSchemas(cmd *cobra.Command, flagValue string, project projectconfig.Value[[]string], address string) ([]string, error) {
 	joined := projectconfig.Value[string]{Value: JoinSchemas(project.Value), Present: project.Present}
-	return ParseSchemas(EffectiveString(cmd, SchemasFlagName, flagValue, joined))
+	return ParseSchemasForURLs(EffectiveString(cmd, SchemasFlagName, flagValue, joined), address)
 }
 
 // ResolveExternalSchemaCommands resolves the external-command schema source for

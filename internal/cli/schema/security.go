@@ -135,7 +135,7 @@ nothing else. It also reads only what Ptah models, so a clean report means
 		"Database URL to analyze (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.schemas, securitySchemaFlag, "",
 		"Comma-separated schemas to analyze: PostgreSQL-family schemas, or YDB directories relative to the "+
-			"database root. Empty uses the connection default, and on YDB every directory. "+dbcli.SchemasQuoting)
+			"database root. Empty uses the connection default, and on YDB every directory. "+dbcli.SchemasURLLimit+dbcli.SchemasQuoting)
 	dbcli.RefuseEmptySchemasEnv(flags, securitySchemaFlag, dbcli.ConnectionDefaultSchemas)
 	flags.StringVar(&opts.format, securityFormatFlag, "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, securityFailOnFlag, securityFailOnError,
@@ -173,7 +173,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

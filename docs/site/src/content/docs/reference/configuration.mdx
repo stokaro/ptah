@@ -80,11 +80,10 @@ document types the flag.
 
 ## Schema-selecting variables
 
-`PTAH_SCHEMA` and `PTAH_SCHEMAS` refuse a value that names no schema on every
-command that binds them: the empty value, and a value whose comma-separated
-fields are all blank once trimmed, such as `' '`, `','` or `' , '`. Such a value
-usually comes from a CI variable nobody filled. Read as no selection, it would
-give the run the default of a flag left out.
+A command that binds `PTAH_SCHEMA` or `PTAH_SCHEMAS` refuses empty values and
+lists whose comma-separated fields are all blank after trimming (`' '`, `','`
+or `' , '`). Such values often come from unfilled CI variables. Accepting them
+as no selection would use the flag's default scope.
 
 On the verbs that compare a database with a desired schema, that default is the
 widest. There, the `ptah-compat` flag `-s/--schema` left out selects every
@@ -103,6 +102,8 @@ error: PTAH_SCHEMAS is set to " , ", which names nothing: give it a value, or un
 
 Unset the variable to get that default. An empty value typed on the command
 line keeps the meaning the flag's `--help` gives it, `--schemas ''` included.
+
+Native [MySQL URL limits](../native-commands/#selecting-what-a-comparison-holds) also apply.
 
 ## Variables that narrow a write
 

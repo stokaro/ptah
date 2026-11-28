@@ -145,7 +145,9 @@ type BidirectionalSchemaPlanOptions struct {
 // changed routine that CurrentSchema does not hold, under the name, kind and
 // signature the diff records, fails with
 // [ptah.run/core/ptaherr.ErrInvalidSchemaDiff]: the rollback would have no
-// definition to create it again from.
+// definition to create it again from. A removed materialized view with an
+// explicitly unread setting fails with [ptah.run/core/ptaherr.ErrUnsupportedFeature]:
+// its rollback could not restore the view's storage or other attached setting.
 func PlanBidirectionalSchemaDiff(
 	ctx context.Context,
 	opts BidirectionalSchemaPlanOptions,
@@ -231,6 +233,9 @@ func planBidirectionalSchemaDiffWithRefs(
 		return nil, fmt.Errorf("capture rollback target: %w", err)
 	}
 	if err := refuseUnrestorableRoutines(opts.Diff, opts.CurrentSchema, prior); err != nil {
+		return nil, err
+	}
+	if err := refuseUnrestorableMaterializedViews(opts.Diff, opts.CurrentSchema, dialect, opts.Runtime); err != nil {
 		return nil, err
 	}
 	reverseDiff := reverseSchemaDiffWithPrior(opts.Diff, opts.DesiredSchema, opts.CurrentSchema, prior, dialect, caps)

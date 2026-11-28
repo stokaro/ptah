@@ -190,14 +190,9 @@ func compareReportingUndecidedAdditions(
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
 
-	// Compare the databases of a whole server, before what is in them, on a
-	// target that compares them; see [config.CompareOptions.ServerSchemas].
-	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
-		if err := compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics, database.SchemaRemovalBlockers); err != nil {
-			return nil, Diagnostics{}, err
-		}
+	if err := compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules); err != nil {
+		return nil, Diagnostics{}, err
 	}
-	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules)
 
 	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules)
 	if err != nil {
@@ -690,26 +685,31 @@ func comparesServerDatabases(dialect string) bool {
 	return comparisons.Get(dialect).ServerDatabases
 }
 
-// addDeclaredSchemas runs [compare.DeclaredSchemas] on a dialect that plans a
-// schema the desired state declares and the read does not hold, and
-// [compare.DeclaredNamespaces] on a target whose rules say its reads list
-// their schemas ([schemacomparison.Rules.Namespaces]).
-func addDeclaredSchemas(
+// compareSchemaContainers compares whole-server databases before their
+// contents, then adds declared schemas or namespaces as the target's rules
+// require. It refuses a database drop that would remove an excluded object.
+func compareSchemaContainers(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	cov compare.Coverage,
-	dialect string,
+	opts *config.CompareOptions,
 	semantics identifier.Semantics,
 	rules schemacomparison.Rules,
-) {
-	if comparisons.Get(dialect).DeclaredSchemas {
+) error {
+	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
+		if err := compare.ServerSchemas(diff, desired, database.Schemas, semantics, database.SchemaRemovalBlockers); err != nil {
+			return err
+		}
+	}
+	if comparisons.Get(opts.Dialect).DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)
-		return
+		return nil
 	}
 	if rules.Namespaces {
 		compare.DeclaredNamespaces(diff, desired, database.Schemas, cov, semantics)
 	}
+	return nil
 }
 
 // targetInputs are what a comparison for a selected target compares: both

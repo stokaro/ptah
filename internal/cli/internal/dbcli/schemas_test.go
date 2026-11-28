@@ -122,7 +122,7 @@ func TestEffectiveSchemas_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			cmd, raw := schemasCommand(c, test.args...)
 
-			got, err := dbcli.EffectiveSchemas(cmd, *raw, project)
+			got, err := dbcli.EffectiveSchemas(cmd, *raw, project, "postgres://localhost/db")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -136,7 +136,7 @@ func TestEffectiveSchemas_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	cmd, raw := schemasCommand(c, "--schemas", `a"b`)
 
-	got, err := dbcli.EffectiveSchemas(cmd, *raw, projectconfig.Value[[]string]{Value: []string{"a"}, Present: true})
+	got, err := dbcli.EffectiveSchemas(cmd, *raw, projectconfig.Value[[]string]{Value: []string{"a"}, Present: true}, "postgres://localhost/db")
 
 	c.Assert(err, qt.ErrorMatches, `invalid schema list "a\\"b": parse error on line 1, column 2: bare " in non-quoted-field`)
 	c.Assert(got, qt.IsNil)

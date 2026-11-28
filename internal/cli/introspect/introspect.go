@@ -95,7 +95,7 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemasRaw)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemasRaw, opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

@@ -407,7 +407,9 @@ func TestSchemaDiffAnswersForAnAccountThatSeesEverythingE2E(t *testing.T) {
 // TestAllPrivilegesOnTheDatabaseE2E covers the account most deployments connect
 // as. It holds everything a database-level grant can hold, and on MySQL that does
 // not reach the body of another definer's routine, which SHOW_ROUTINE guards
-// globally. MariaDB's ALL includes SHOW CREATE ROUTINE.
+// globally. MariaDB's ALL includes SHOW CREATE ROUTINE. Read the administrator's
+// answer before provisioning the account: its authentication grants are visible
+// to the administrator alone and are not the schema objects this test compares.
 func TestAllPrivilegesOnTheDatabaseE2E(t *testing.T) {
 	const all = "GRANT ALL PRIVILEGES ON {db}.* TO {account}"
 
@@ -415,8 +417,9 @@ func TestAllPrivilegesOnTheDatabaseE2E(t *testing.T) {
 		t.Run(s.name+", with no routine", func(t *testing.T) {
 			c := qt.New(t)
 			f := newFixture(c, s)
+			administrator := f.diff(c, "")
 			account := f.newAccount(c, "all", all)
-			assertSameAsAdministrator(c, f.diff(c, account), f.diff(c, ""))
+			assertSameAsAdministrator(c, f.diff(c, account), administrator)
 		})
 	}
 
@@ -432,8 +435,9 @@ func TestAllPrivilegesOnTheDatabaseE2E(t *testing.T) {
 		c := qt.New(t)
 		s := servers()[1]
 		f := newFixture(c, s, leftProcedure...)
+		administrator := f.diff(c, "")
 		account := f.newAccount(c, "allr", all)
-		assertSameAsAdministrator(c, f.diff(c, account), f.diff(c, ""))
+		assertSameAsAdministrator(c, f.diff(c, account), administrator)
 	})
 }
 
@@ -683,8 +687,11 @@ func TestARunThatLeavesAKindOutDoesNotNeedItsPrivilegeE2E(t *testing.T) {
 			for i, row := range rows {
 				t.Run(row.name, func(t *testing.T) {
 					c := qt.New(t)
+					// Keep the account's authentication grants out of the
+					// administrator's schema-object oracle, as above.
+					administrator := f.diff(c, "", "--exclude", row.exclude)
 					account := f.newAccount(c, fmt.Sprintf("x%d", i), row.grants(s)...)
-					assertSameAsAdministrator(c, f.diff(c, account, "--exclude", row.exclude), f.diff(c, "", "--exclude", row.exclude))
+					assertSameAsAdministrator(c, f.diff(c, account, "--exclude", row.exclude), administrator)
 				})
 			}
 			t.Run("a selector naming one trigger vouches for no other", func(t *testing.T) {

@@ -209,7 +209,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	requested, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
+	requested, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue(), dbURL)
 	if err != nil {
 		return err
 	}

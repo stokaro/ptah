@@ -183,7 +183,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, slices.Concat(opts.fromURLs, opts.toURLs)...)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
