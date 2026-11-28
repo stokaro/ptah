@@ -332,8 +332,9 @@ type ApplyRuntimePlan struct {
 	conn    *dbschema.DatabaseConnection
 	txMode  migrator.MigrationTxMode
 	// current is the filtered (schema/include scope and exclude) introspected
-	// target state the plan was computed against; the dev database simulation
-	// recreates it before rehearsing the plan.
+	// target state the plan was computed against, as the comparison read it
+	// (see [rehearsedState]); the dev database simulation recreates it before
+	// rehearsing the plan.
 	current *catalog.Database
 	// undecided is what [ApplyRuntimePlan.Undecided] returns.
 	undecided schemadiff.Diagnostics
@@ -461,7 +462,10 @@ type applyComputation struct {
 	// the schema and false about the row.
 	dataStatements []dataStatement
 	current        *catalog.Database
-	desired        *schemamodel.Database
+	// rehearsed is current as the comparison read it, the state a dev
+	// database rehearsal recreates; see [rehearsedState].
+	rehearsed *catalog.Database
+	desired   *schemamodel.Database
 	// readScope is the schema allow-list current was read at, nil when the read
 	// was the connection's own default.
 	readScope []string
@@ -687,6 +691,7 @@ func computeApplyPlan(
 	if err := schemaremoval.RefuseBlocked(compared); err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
+	computation.rehearsed = rehearsedState(current, compared)
 	// No statement is planned for a withheld object, so a plan that says
 	// nothing about it quietly does less than the desired schema asks for. The
 	// wording names neither surface's flags: native `schema apply` and the
@@ -1451,7 +1456,7 @@ func PrepareApply(
 		dryRun:    opts.DryRun,
 		conn:      conn,
 		txMode:    opts.TxMode,
-		current:   computation.current,
+		current:   computation.rehearsed,
 		seed:      newRehearsalSeed(conn.Info(), opts.Runtime.Selections(), planning.Schemas, planning.Include, planning.Exclude),
 		undecided: computation.undecided,
 		rehearsal: nativeRehearsal{
