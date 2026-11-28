@@ -28,9 +28,13 @@ const FoldsNamesQuery = "SELECT " + foldsNames
 // is on, and the role keeps SELECT. Measured on MySQL 26.10.0 and MariaDB
 // 12.3.3.
 //
-// The fold is [strings.EqualFold]. It agrees with the server on ASCII letters;
-// the non-ASCII pairs a server's character set folds otherwise are not
-// modeled.
+// The fold lower-cases both names with [strings.ToLower], as the server
+// lower-cases a name it stores or looks up. It does not use
+// [strings.EqualFold], which also joins letters that only case folding
+// relates, such as ſ and s: measured on MySQL 8.4.13 and 26.10.0 and on
+// MariaDB 11.8.9 and 12.3.3, all with lower_case_table_names=1, the server
+// holds the databases s and ſ apart. The non-ASCII pairs a server's character
+// set lower-cases otherwise are not modeled.
 type Names struct {
 	folds bool
 }
@@ -44,7 +48,14 @@ func NamesOf(folds bool) Names {
 // Same reports whether left and right name the same database, or the same
 // table of one database, under the rule.
 func (n Names) Same(left, right string) bool {
-	return left == right || n.folds && strings.EqualFold(left, right)
+	return left == right || n.folds && lowered(left) == lowered(right)
+}
+
+// lowered is name as a server that folds names stores it and looks it up. It
+// is not a case fold: [strings.EqualFold] would also join s and ſ, which the
+// server keeps apart.
+func lowered(name string) string {
+	return strings.ToLower(name)
 }
 
 // SameDatabase is a SQL predicate that left and right name the same database,

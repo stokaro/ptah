@@ -1978,6 +1978,14 @@ whole-server URL whose server folds names, `--schemas Sales` and `--schemas sale
 the database `sales` and the file's `Sales`, so the plan keeps both sides
 of the database and changes only what the file and the database disagree on.
 
+A whole-server read compares each name in `--schemas` with the databases the
+server holds by the server's own rule: byte for byte with
+`lower_case_table_names=0`, and lower-cased with 1 or 2. On a server that keeps
+names apart, `--schemas Sales` reads no database `sales`, and on one that
+folds names, `--schemas s` reads `s` and not `ſ`, a lower-case letter of its
+own. The same holds on MySQL and MariaDB, whatever order the names are listed
+in.
+
 A pattern is matched as written against the names the server holds. On a
 server that folds names, `--exclude Sales.u` matches nothing and the apply
 refuses it, as it refuses every exclusion that protects nothing. `migrations

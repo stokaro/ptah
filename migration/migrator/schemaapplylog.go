@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -110,9 +111,18 @@ type SchemaApplyLogLoss struct {
 	Message string `json:"message"`
 }
 
+// errApplyLogWholeServer is the loss of every entry of an apply over a
+// connection to a whole server. Such a session selects no database, so the
+// table has no database to be created in: MySQL 8.4 and MariaDB 11.8 refuse
+// its CREATE TABLE with Error 1046 (No database selected).
+var errApplyLogWholeServer = errors.New("the schema apply log is not kept on a whole-server connection, " +
+	"which selects no database to keep it in; apply through a URL that names a database to keep it")
+
 // SchemaApplyLog writes one apply's entries to the schema apply log, the
 // table [revisiontable.ApplyLog] names, in the schema an unqualified name
-// resolves to on the connection (dbo on SQL Server).
+// resolves to on the connection (dbo on SQL Server). Over a connection to a
+// whole server it writes nothing: it says so once, through the logger, and
+// [SchemaApplyLog.Report] names each entry as lost, with the reason.
 //
 // A failed write never fails the apply. It is reported by the logger and in
 // [SchemaApplyLog.Report], and the value the database refused is not shortened
@@ -129,6 +139,11 @@ type SchemaApplyLog struct {
 	actorSource  ActorSource
 	actorOrigin  string
 	runReference string
+
+	// unkept is why no entry can be written, set for a whole-server
+	// connection; warned records that the logger has said so.
+	unkept error
+	warned bool
 
 	mu      sync.Mutex
 	seq     int64
@@ -165,7 +180,7 @@ func NewSchemaApplyLog(conn *dbschema.DatabaseConnection, options SchemaApplyLog
 	if source == ActorProvided {
 		origin = options.ActorOrigin
 	}
-	return &SchemaApplyLog{
+	log := &SchemaApplyLog{
 		migrator:     NewMigrator(conn, nil),
 		logger:       logger,
 		runID:        newMigrationLogRunID(),
@@ -174,6 +189,10 @@ func NewSchemaApplyLog(conn *dbschema.DatabaseConnection, options SchemaApplyLog
 		actorOrigin:  origin,
 		runReference: options.RunReference,
 	}
+	if conn.Info().WholeServer {
+		log.unkept = errApplyLogWholeServer
+	}
+	return log
 }
 
 // Start writes the started entry over session, the connection the plan is
@@ -233,6 +252,14 @@ func (l *SchemaApplyLog) Report() *SchemaApplyLogReport {
 // write appends the entry that records entry.State over conn. The caller
 // holds l.mu.
 func (l *SchemaApplyLog) write(ctx context.Context, conn *dbschema.DatabaseConnection, entry SchemaApplyLogOutcome) {
+	if l.unkept != nil {
+		if !l.warned {
+			l.logger.Warn("The schema apply log is not kept", "table", revisiontable.ApplyLog, "reason", l.unkept.Error())
+			l.warned = true
+		}
+		l.report.Lost = append(l.report.Lost, SchemaApplyLogLoss{State: entry.State, Message: l.unkept.Error()})
+		return
+	}
 	scoped := *l.migrator
 	scoped.conn = conn
 	err := l.ensureTable(ctx, &scoped)

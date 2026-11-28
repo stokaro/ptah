@@ -3,6 +3,8 @@ package dbtest
 import (
 	"database/sql/driver"
 	"strings"
+
+	"ptah.run/internal/mysqlname"
 )
 
 // The server versions a scripted MySQL-family session reports.
@@ -57,6 +59,9 @@ func MySQLSession(version string, grants []string, next QueryHandler) QueryHandl
 			}, nil
 		case strings.TrimSpace(query) == "SELECT CHARSET(CONVERT('' USING utf8))":
 			return QueryResult{Columns: []string{"CHARSET(CONVERT('' USING utf8))"}, Rows: [][]driver.Value{{"utf8mb3"}}}, nil
+		case strings.TrimSpace(query) == mysqlname.FoldsNamesQuery:
+			// A server started with lower_case_table_names=0, the Linux default.
+			return QueryResult{Columns: []string{"folds"}, Rows: [][]driver.Value{{int64(0)}}}, nil
 		case strings.TrimSpace(query) == "SELECT @@GLOBAL.automatic_sp_privileges":
 			return QueryResult{Columns: []string{"@@GLOBAL.automatic_sp_privileges"}, Rows: [][]driver.Value{{int64(1)}}}, nil
 		case strings.TrimSpace(query) == "SHOW PRIVILEGES":
