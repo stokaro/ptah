@@ -30,7 +30,9 @@ different default schemas read the same history. `--migrations-schema` /
 metadata. Without either, a run refuses when `dbo` holds no revision table and
 the user's default schema holds one, since reading the empty `dbo` would apply
 every migration again (`refuseStrandedConnectionHistory` in
-`migration/migrator`).
+`migration/migrator`). A table counts only with the columns of the run's layout
+(`RevisionTableFormat.layoutColumns`), so another tool's `schema_migrations`
+does not.
 
 The seed ledger `schema_seeds` follows the same schema, with the same refusal
 and the same column check (`trackerTable` and `refuseStrandedLedger` in

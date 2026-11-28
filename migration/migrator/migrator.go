@@ -1564,7 +1564,12 @@ func (m *Migrator) ensureMetadataColumn(ctx context.Context, table, column, fall
 // metadataColumnExists reports whether the metadata table named table has
 // column, asking the engine's catalog.
 func (m *Migrator) metadataColumnExists(ctx context.Context, table, column string) (bool, error) {
-	described := m.metadataTable(table)
+	return m.columnExistsIn(ctx, m.metadataTable(table), column)
+}
+
+// columnExistsIn reports whether the table described has column, asking the
+// engine's catalog.
+func (m *Migrator) columnExistsIn(ctx context.Context, described migratorext.Table, column string) (bool, error) {
 	if metadataCatalog := m.services().Catalog; metadataCatalog != nil {
 		return metadataCatalog.ColumnExists(ctx, m.conn, described, column)
 	}

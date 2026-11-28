@@ -81,7 +81,11 @@ account whose default schema is `app` migrated through `--migrations-schema app`
 or `schema=app`: reading the empty `dbo` would apply every migration again. The
 refusal names both schemas. Pass `--migrations-schema app` (`--revisions-schema
 app` in `ptah-compat`) or add `schema=app` to the URL to keep the history where
-it is, or move the migration tables into `dbo`.
+it is, move the migration tables into `dbo`, or pass `--migrations-schema dbo`
+to start a new history in `dbo`. Only a table with the columns of Ptah's or
+Atlas's revision table counts as a history. A table of the same name that
+another tool keeps, such as golang-migrate's `schema_migrations`, is left alone,
+and the run starts its history in `dbo`.
 
 A user who cannot create a table in `dbo`, such as one outside `db_owner`,
 cannot start a history there, and the error names the same flag and parameter.

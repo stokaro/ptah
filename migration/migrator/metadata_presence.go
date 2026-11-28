@@ -110,8 +110,7 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 	for _, column := range columns {
 		present[strings.ToLower(column)] = struct{}{}
 	}
-	baseColumns := []string{"version", "description", "applied_at"}
-	if missing := missingMetadataColumns(present, baseColumns); len(missing) > 0 {
+	if missing := missingMetadataColumns(present, nativeRevisionBaseColumns); len(missing) > 0 {
 		return false, fmt.Errorf("invalid migrations metadata layout: missing base columns %s", strings.Join(missing, ", "))
 	}
 	currentColumns := []string{"state", "applied", "total", "error", "error_stmt", "execution_time_ms", "checksum"}
