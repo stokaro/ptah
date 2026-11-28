@@ -828,9 +828,11 @@ refused, and neither is one in text Ptah does not read, such as `EXEC(@sql)`.
 `ptah migrations lint --dialect sqlserver` checks statements inside
 `BEGIN ... END`, `IF ... ELSE`, `WHILE`, and `TRY`/`CATCH` blocks, and the
 elements of `CREATE SCHEMA`. It also checks statements written without a
-semicolon between them. A nested `DROP TABLE` receives the same destructive
-finding as a standalone drop,
-at the line where the `DROP` starts.
+semicolon between them, and the statements an `EXEC` of one string literal
+runs. A nested `DROP TABLE` receives the same destructive finding as a
+standalone drop, at the line where the `DROP` starts. An `EXEC` of a
+variable or a concatenation is reported as a statement the parser could not
+read.
 
 Lint checks each possible branch without evaluating its condition. A condition
 the schema parser does not model retains its coverage finding. Lint follows the

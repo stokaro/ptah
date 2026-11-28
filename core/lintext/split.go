@@ -42,6 +42,12 @@ type Statement struct {
 	Line int `json:"line"`
 	// SQL is the statement text as written, SQL[Start:End] of the source.
 	SQL string `json:"sql"`
+	// Runs is the text the server runs for the statement when it is not SQL:
+	// a statement a SQL Server EXEC runs from a string literal, with each
+	// quote the literal doubles read as one. It is empty when the server runs
+	// SQL as written. Canonical, Words, SourceWords and Routine are read from
+	// the text the server runs.
+	Runs string `json:"runs,omitempty"`
 	// Canonical is the display form: comments removed, every whitespace run
 	// collapsed to one space, everything but string literals and quoted
 	// identifiers uppercased.

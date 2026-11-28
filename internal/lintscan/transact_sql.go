@@ -94,8 +94,22 @@ func transactSQLPiece(sql string, offset int, mode Mode, locations map[int]trans
 	var statements []lintext.Statement
 	for _, span := range transactSQLRanges(parsed) {
 		start, end := offset+span.start, offset+span.end
-		location := locations[start]
-		statements = append(statements, statement(sql[span.start:span.end], start, end, location.line, location.comments, mode))
+		if !span.literal {
+			location := locations[start]
+			statements = append(statements, statement(sql[span.start:span.end], start, end, location.line, location.comments, mode))
+			continue
+		}
+		// A statement an EXEC's literal holds has no token of its own: the
+		// literal is one. It takes the line it stands on and the comments
+		// above the EXEC, so a directive above the EXEC covers it.
+		location := locations[offset+span.anchor]
+		line := location.line + strings.Count(sql[span.anchor:span.start], "\n")
+		stmt := statement(span.text, start, end, line, location.comments, mode)
+		stmt.SQL = sql[span.start:span.end]
+		if stmt.SQL != span.text {
+			stmt.Runs = span.text
+		}
+		statements = append(statements, stmt)
 	}
 	return statements
 }
@@ -114,13 +128,23 @@ func transactSQLFallback(sql string, offset int, mode Mode, locations map[int]tr
 
 type transactSQLRange struct {
 	start, end int
+	// literal marks a statement the literal of an EXEC holds
+	// (sqlserverbatch.ExecLiteral). text is then what the server runs, which
+	// differs from the source range where the literal doubles a quote, and
+	// anchor is where the EXEC starts.
+	literal bool
+	text    string
+	anchor  int
 }
 
 // transactSQLRanges keeps a condition or schema header separate from its
 // statements. The parser can report an unread condition, and a directive
 // above a header belongs only to that header. INSERT ... EXEC stays whole:
 // its prefix is not a complete INSERT. A Module stores its body rather than
-// executing it.
+// executing it. An EXEC of one string literal stands for the statements the
+// literal holds, as the migrator and the safety rating read it
+// (sqlserverbatch.Leaves); an EXEC of a variable or a concatenation, and a
+// literal the reader cannot read, stay one statement.
 func transactSQLRanges(statements []sqlserverbatch.Statement) []transactSQLRange {
 	var spans []transactSQLRange
 	for _, stmt := range statements {
@@ -131,6 +155,10 @@ func transactSQLRanges(statements []sqlserverbatch.Statement) []transactSQLRange
 			spans = append(spans, transactSQLRange{start: stmt.Start, end: stmt.Start + len(strings.TrimSuffix(stmt.Head, ";"))})
 			spans = append(spans, transactSQLRanges(stmt.Statements)...)
 		default:
+			if inner, ok := execRanges(stmt); ok {
+				spans = append(spans, inner...)
+				continue
+			}
 			end := stmt.End
 			if stmt.Kind != sqlserverbatch.Module && strings.HasSuffix(stmt.SQL, ";") {
 				end--
@@ -139,6 +167,38 @@ func transactSQLRanges(statements []sqlserverbatch.Statement) []transactSQLRange
 		}
 	}
 	return spans
+}
+
+// execRanges returns the ranges of the statements an EXEC of one string
+// literal runs, mapped from the literal's text onto the file. ok is false for
+// any other statement and for a literal that holds nothing the reader reads.
+func execRanges(stmt sqlserverbatch.Statement) ([]transactSQLRange, bool) {
+	if stmt.Kind != sqlserverbatch.Simple {
+		return nil, false
+	}
+	literal, ok := sqlserverbatch.ExecLiteral(stmt.SQL)
+	if !ok {
+		return nil, false
+	}
+	inner, err := sqlserverbatch.Read(literal.Text)
+	if err != nil || len(inner) == 0 {
+		return nil, false
+	}
+	var spans []transactSQLRange
+	for _, span := range transactSQLRanges(inner) {
+		text := span.text
+		if !span.literal {
+			text = literal.Text[span.start:span.end]
+		}
+		spans = append(spans, transactSQLRange{
+			start:   stmt.Start + literal.Offset(span.start),
+			end:     stmt.Start + literal.Offset(span.end),
+			literal: true,
+			text:    text,
+			anchor:  stmt.Start,
+		})
+	}
+	return spans, true
 }
 
 type transactSQLLocation struct {
