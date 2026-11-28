@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,6 +134,13 @@ type DiffOptions struct {
 	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
+	// NoteOneSchemaReads writes a note to Diagnostics for each database side
+	// read at one schema of a database that may hold others; see
+	// [oneSchemaReads]. The native surface sets it. The compatibility surface
+	// leaves it off: the community binary reads a SQL Server URL at the same
+	// schema and says nothing, and its flag that names more schemas is
+	// spelled differently.
+	NoteOneSchemaReads bool
 	// ServerVersion pins the server the plan targets, as `--server-version`
 	// spells it. Empty plans against the dialect's newest preset, which is
 	// what this command did before the field existed.
@@ -859,6 +867,7 @@ func diffResolvedStates(
 	if !diff.HasChanges() {
 		ReportOmitted(opts.Diagnostics, omitted)
 	}
+	noteOneSchemaReads(opts, dialect, fromState, toState)
 	return comparedDiff{
 		compared: compared,
 		diff:     diff,
@@ -944,6 +953,86 @@ func diffComparisonLimits(fromState, toState atlassource.State, from, to *catalo
 		}
 	}
 	return limits
+}
+
+// oneSchemaRead is a database side of a diff read at one schema of a database
+// that may hold others: side is its flag, schema the schema it was read at,
+// and beyond the schemas the other side, other, names that it was not read at.
+type oneSchemaRead struct {
+	side, other, schema string
+	beyond              []string
+}
+
+// oneSchemaReads names each database side of a diff read at one schema of a
+// database that may hold others, on an engine whose desired state declares
+// schemas ([descriptor.Comparison.DeclaredSchemas]) but whose URL selects no
+// scope wider than one schema ([descriptor.Schemas.Selection] unset), when the
+// run named no schemas. SQL Server is such an engine: a URL is read at the
+// schema its schema parameter names, or else at the default schema of the
+// connection's user, and the other schemas of the database are not compared.
+// Measured on SQL Server 2025, a --from database holding app.t1 beside a --to
+// file declaring app.t1 plans CREATE TABLE [app].[t1], which fails on that
+// database.
+func oneSchemaReads(dialect string, requested []string, fromState, toState atlassource.State) []oneSchemaRead {
+	described, ok := platform.Lookup(dialect)
+	if !ok || len(requested) > 0 || !described.Comparison.DeclaredSchemas || described.Schemas.Selection != "" {
+		return nil
+	}
+	var reads []oneSchemaRead
+	for _, side := range []struct {
+		name, otherName string
+		state, other    atlassource.State
+	}{
+		{name: "--from", otherName: "--to", state: fromState, other: toState},
+		{name: "--to", otherName: "--from", state: toState, other: fromState},
+	} {
+		state := side.state
+		if state.Kind != atlassource.KindDatabase || state.RealmScoped || state.WholeServer || state.DefaultSchema == "" {
+			continue
+		}
+		read := oneSchemaRead{side: side.name, other: side.otherName, schema: state.DefaultSchema}
+		// A declaration DeclaredSchemaNames cannot read names no schema here;
+		// the comparison that follows refuses it.
+		declared, _ := schemascope.DeclaredSchemaNames(side.other.Schema)
+		for _, name := range declared {
+			if !strings.EqualFold(name, state.DefaultSchema) {
+				read.beyond = append(read.beyond, name)
+			}
+		}
+		reads = append(reads, read)
+	}
+	return reads
+}
+
+// noteOneSchemaReads reports the database sides of a diff read at one schema
+// ([oneSchemaReads]) to opts.Diagnostics where opts.NoteOneSchemaReads asks
+// for it.
+func noteOneSchemaReads(opts DiffOptions, dialect string, fromState, toState atlassource.State) {
+	if opts.NoteOneSchemaReads {
+		reportOneSchemaReads(opts.Diagnostics, oneSchemaReads(dialect, opts.Schemas, fromState, toState))
+	}
+}
+
+// reportOneSchemaReads writes a note to diagnostics, which may be nil, for
+// each of reads: the schema it was read at, and the schemas the other side
+// declares beyond it, whose objects the plan reads as absent.
+func reportOneSchemaReads(diagnostics io.Writer, reads []oneSchemaRead) {
+	if diagnostics == nil {
+		return
+	}
+	for _, read := range reads {
+		note := fmt.Sprintf("Note: the %s database was read at schema %q alone; pass --schemas to compare others",
+			read.side, read.schema)
+		if len(read.beyond) > 0 {
+			quoted := make([]string, 0, len(read.beyond))
+			for _, name := range read.beyond {
+				quoted = append(quoted, strconv.Quote(name))
+			}
+			note += fmt.Sprintf(". %s declares objects in %s, which this diff compares as absent from the database",
+				read.other, strings.Join(quoted, ", "))
+		}
+		fmt.Fprintln(diagnostics, note+".")
+	}
 }
 
 // plannedDiffChanges is the statements of diff's plan, each carrying the comment

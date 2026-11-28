@@ -54,8 +54,14 @@ func convertSQLServerURL(dbURL string) string {
 }
 
 // Describe reads the version, the collation CATALOG_DEFAULT applies, which
-// decides how the catalog compares identifiers, and the schema: `dbo` unless
-// the URL's `schema` parameter names another.
+// decides how the catalog compares identifiers, and the schema: the one the
+// URL's `schema` parameter names, or else the default schema of the
+// connection's database user, which SCHEMA_NAME() returns. The server
+// creates a name written without a schema there, so a plan that writes one
+// is compared in the schema that holds it: for a user whose default schema
+// is `app`, an unqualified CREATE FUNCTION f lands in app.f, and a comparison
+// that read only dbo would plan the function again on every run. A user with
+// no default schema is in `dbo`, as the server answers for it.
 func (Service) Describe(
 	ctx context.Context,
 	opened *connector.Pool,
@@ -83,9 +89,16 @@ SELECT
 	if err := db.QueryRowContext(ctx, catalogSemanticsQuery).Scan(&catalogCollation); err != nil {
 		return info, fmt.Errorf("failed to get SQL Server catalog identifier semantics: %w", err)
 	}
-	info.Schema = "dbo"
-	if schema := request.Parsed.Query().Get("schema"); schema != "" {
-		info.Schema = schema
+	info.Schema = request.Parsed.Query().Get("schema")
+	if info.Schema == "" {
+		var defaultSchema sql.NullString
+		if err := db.QueryRowContext(ctx, "SELECT SCHEMA_NAME()").Scan(&defaultSchema); err != nil {
+			return info, fmt.Errorf("failed to get the SQL Server default schema: %w", err)
+		}
+		info.Schema = defaultSchema.String
+	}
+	if info.Schema == "" {
+		info.Schema = "dbo"
 	}
 	info.IdentifierSemantics = identifier.ForSQLServerCatalog(catalogCollation)
 	info.IdentifierSemantics.DefaultSchema = info.Schema

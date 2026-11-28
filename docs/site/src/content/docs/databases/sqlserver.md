@@ -36,7 +36,13 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&e
 
 The Ptah-only `schema` query parameter selects the default schema for
 introspection, migration metadata, and write helpers; it is removed before the
-URL reaches the driver, and it defaults to `dbo`:
+URL reaches the driver. Without it the schema is the default schema of the
+connection's database user, which `SCHEMA_NAME()` returns: `dbo` for a
+database owner, and `app` for a user created `WITH DEFAULT_SCHEMA = app`.
+SQL Server creates a name written without a schema there, so an unqualified
+table or routine is compared where the server puts it. Without a connection,
+as in `ptah migrations generate` with no dev database, an unqualified name is
+read as `dbo`'s:
 
 ```bash
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
@@ -317,11 +323,16 @@ and plans nothing.
 
 A routine is replaced in the schema the read found it in. The `DROP` and the
 `CREATE` both put the declared name in that schema. A routine the schema
-declares without a schema is compared in `dbo`, or in the URL's `schema`, and
-is replaced there. SQL Server resolves an unqualified name in the session's
-default schema first, so for an account whose default schema is another,
-`DROP FUNCTION [f]` would drop that schema's `f` and leave the routine the plan
-compared unchanged.
+declares without a schema is compared in the connection's schema (see
+[Connecting](#connecting)) and is replaced there. A URL whose
+`schema` parameter names a schema other than the user's default schema reads
+that schema, while the server still creates an unqualified name in the default
+schema, so leave the parameter out for such an account or qualify the names.
+
+A database side of `ptah schema diff` is read at that one schema. When the
+run names no `--schemas`, it says so on standard error, and names the schemas
+the other side declares beyond it, whose objects the diff compares as absent
+from the database. `--schemas dbo,app` reads both.
 
 A selection runs after the names are paired. `--schemas`, `--include` and
 `--exclude`, in both binaries (`--schema` in `ptah-compat`), select a schema
