@@ -359,6 +359,28 @@ func TestCompareWithDatabaseInfo_LeavesTheRowPolicyOfABlockedTable(t *testing.T)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
 }
 
+// Blocked drops are listed by name, whatever order the read listed the tables
+// in.
+func TestCompareWithDatabaseInfo_ListsBlockedTablesByName(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	current := &catalog.Database{Tables: []catalog.Table{
+		{Schema: "public", Name: "z", Columns: []catalog.Column{{Name: "id", DataType: "int"}, {Name: "c", DataType: "int"}}},
+		{Schema: "public", Name: "u", Columns: []catalog.Column{{Name: "id", DataType: "int"}, {Name: "c", DataType: "int"}}},
+	}}
+	filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
+		Selections: runtime.Selections(), Dialect: platform.Postgres, Exclude: []string{"*.c"}, DefaultSchema: "public",
+	})
+	c.Assert(err, qt.IsNil)
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, filtered,
+		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"}, nil, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.RemovalsBlocked, qt.HasLen, 2)
+	c.Assert([]string{diff.RemovalsBlocked[0].Name, diff.RemovalsBlocked[1].Name}, qt.DeepEquals, []string{"public.u", "public.z"})
+}
+
 // A table in a database the desired schema records as not described is not a
 // drop the comparison plans, so a child the selection excludes blocks
 // nothing there and nothing is reported.
