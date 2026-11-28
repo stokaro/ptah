@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/timescale"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/unreadroles"
 	"ptah.run/internal/unreadtables"
 )
 
@@ -115,6 +116,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// A table the read found and left out is in no statement printed below,
 	// so without the note the output reads as a database without it.
 	unreadtables.Report(stderr, schema)
+
+	// A role holding a principal whose privileges the read did not read in
+	// full holds privileges no statement printed below states.
+	unreadroles.Report(stderr, schema)
 
 	// An object of a kind Ptah does not model is in no statement printed below
 	// either.

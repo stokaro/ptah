@@ -132,14 +132,16 @@ type Database struct {
 	// one a role name alone means, an account created as a login and granted
 	// as a role, or a name two accounts read as. A role that holds one,
 	// directly, through a chain of memberships or through PUBLIC, holds
-	// privileges the read does not state. Sorted, and nil where there are none.
-	UnreadRoles []string `json:"-"`
+	// privileges the read does not state. Sorted by name, and nil where there
+	// are none.
+	UnreadRoles []UnreadRole `json:"-"`
 	// EveryAccountHoldsUnread reports a read that established that every
 	// account holds roles whose memberships it does not state: MySQL's
 	// mandatory_roles where the read could not read the setting or a name in
 	// it, or where a role named PUBLIC leaves no member to state them for.
-	// Every role then holds privileges the read does not state.
-	EveryAccountHoldsUnread bool `json:"-"`
+	// Every role then holds privileges the read does not state. Nil where
+	// every account holds only what the read states.
+	EveryAccountHoldsUnread *EveryAccountUnread `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
 	// every table of one schema, through a grant that names no table, such as
@@ -1959,6 +1961,28 @@ type WideAccess struct {
 	SwitchOnly bool `json:"switch_only,omitempty"`
 }
 
+// UnreadRole is a principal whose privileges a read did not read, which a role
+// the read describes holds ([Database.UnreadRoles]).
+type UnreadRole struct {
+	// Name is the principal, named as a role membership names it.
+	Name string `json:"name"`
+	// Cause says why the read did not read the principal's privileges, as a
+	// lower-case clause that does not name the principal, which a note or a
+	// refusal prints after the name and a colon.
+	Cause string `json:"cause"`
+}
+
+// EveryAccountUnread is a read's finding that every account holds roles
+// whose memberships the read does not state ([Database.EveryAccountHoldsUnread]).
+type EveryAccountUnread struct {
+	// Roles are those roles, named as a role membership names them, where the
+	// read could name them, and nil where it could not. Sorted.
+	Roles []string `json:"roles,omitempty"`
+	// Cause says why the read does not state the memberships, as a
+	// lower-case clause a note or a refusal prints after a colon.
+	Cause string `json:"cause"`
+}
+
 // Grant represents a privilege grant read from the database.
 type Grant struct {
 	Role       string `json:"role"`                 // Role receiving the privilege; PUBLIC for every role
@@ -2031,6 +2055,15 @@ type Grant struct {
 	// a column row of another state under it holds for the other columns only,
 	// so it is reported as the privilege on each of them.
 	Column string `json:"column,omitempty"`
+
+	// Login marks a privilege held by an account the read does not describe
+	// as a role: on MySQL and MariaDB a login on host %, which a declaration
+	// names as a grantee the way it names a role. The row is reading context.
+	// A comparison reads it so that a declared grant the login holds is not
+	// planned again and a revoke the declaration writes reaches it, and never
+	// removes it because the other side lacks it. A description leaves it
+	// out, since no statement it prints creates the login.
+	Login bool `json:"login,omitempty"`
 }
 
 // OwnerDefault reports whether the row is a privilege an object's owner holds

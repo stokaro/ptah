@@ -359,8 +359,9 @@ across native commands.
   covers. A user account that holds broad grants directly is not measured, and
   neither is a MySQL role on a host other than `%`. Where a role holds such an
   account, through `GRANT` of a login or of that role, or holds a name two
-  accounts share, the rules skip that role and every role that holds it, and
-  the skip names the account and the roles; the other roles are measured.
+  accounts share, the rules skip that role and every role that holds it. The
+  skip names the account, the roles, and why the read did not read every
+  privilege of the account; the other roles are measured.
 - On MySQL a session's account and every role it has active share one lookup
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and
@@ -371,7 +372,9 @@ across native commands.
   MySQL 8.4.13 and 26.10.0, a session that activates only that role reads what
   the pattern gives. Where the read cannot read `mandatory_roles`, or a name
   in it, or a MySQL role is named `PUBLIC` beside a mandatory role, every role
-  may hold roles the read does not state, and the rules skip every role.
+  may hold roles the read does not state, and the rules skip every role. The
+  skip gives the cause: for a role named `PUBLIC`, that it hides which roles
+  every account holds.
 - Where Ptah cannot tell which of two rows the server applies, the finding
   counts every privilege of both, each under its own row, so it may show more
   than the server allows. That covers two MariaDB patterns with the same counts

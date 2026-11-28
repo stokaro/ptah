@@ -810,3 +810,121 @@ func TestValidate_FailurePathOracleNames(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `PUBLIC holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: `+
 		`revoke SELECT ON t3 from PUBLIC instead`)
 }
+
+// TestValidate_FailurePathUnread refuses a revoke on a table where a holder of
+// the revoke's role, through the memberships the plan keeps, holds a
+// principal the read did not read in full, or where every account holds roles
+// the read does not state. No cover can be ruled out there, and each refusal
+// carries the read's cause.
+func TestValidate_FailurePathUnread(t *testing.T) {
+	const cause = "it is a login, and the read reads a login's grants on the databases it covers"
+	tests := []struct {
+		name         string
+		memberships  []catalog.RoleMembership
+		unread       []catalog.UnreadRole
+		every        *catalog.EveryAccountUnread
+		publicIsRole bool
+		want         string
+	}{
+		{
+			name:        "a principal the role holds",
+			memberships: []catalog.RoleMembership{{Role: "nm@localhost", Member: "r2"}},
+			unread:      []catalog.UnreadRole{{Name: "nm@localhost", Cause: cause}},
+			want: `role "r2" holds nm@localhost, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: ` +
+				`end the membership that passes nm@localhost on, or leave the revoke out`,
+		},
+		{
+			name:        "a principal a role the role holds holds",
+			memberships: []catalog.RoleMembership{{Role: "parent", Member: "r2"}, {Role: "legacy", Member: "parent"}},
+			unread:      []catalog.UnreadRole{{Name: "legacy", Cause: cause}},
+			want: `role "r2" holds legacy through parent, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: ` +
+				`end the membership that passes legacy on, or leave the revoke out`,
+		},
+		{
+			name:        "a principal every account holds",
+			memberships: []catalog.RoleMembership{{Role: "rh@localhost", Member: "PUBLIC"}},
+			unread:      []catalog.UnreadRole{{Name: "rh@localhost", Cause: cause}},
+			want: `every account holds rh@localhost, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: leave the revoke out`,
+		},
+		{
+			name:         "a principal a role named PUBLIC holds",
+			memberships:  []catalog.RoleMembership{{Role: "PUBLIC", Member: "r2"}, {Role: "legacy", Member: "PUBLIC"}},
+			unread:       []catalog.UnreadRole{{Name: "legacy", Cause: cause}},
+			publicIsRole: true,
+			want: `role "r2" holds legacy through PUBLIC, whose privileges the read did not read in full: ` + cause +
+				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: ` +
+				`end the membership that passes legacy on, or leave the revoke out`,
+		},
+		{
+			name:  "mandatory roles the read named",
+			every: &catalog.EveryAccountUnread{Roles: []string{"mand", "mand6"}, Cause: "a role named PUBLIC hides which roles every account holds"},
+			want: `every account holds the roles mand, mand6 whose memberships the read does not state: ` +
+				`a role named PUBLIC hides which roles every account holds; ` +
+				`so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege`,
+		},
+		{
+			name:  "mandatory roles the read could not name",
+			every: &catalog.EveryAccountUnread{Cause: "the read could not read @@GLOBAL.mandatory_roles: denied"},
+			want: `every account holds roles whose memberships the read does not state: ` +
+				`the read could not read @@GLOBAL\.mandatory_roles: denied; ` +
+				`so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			current := holding(readHolding(nil), test.memberships...)
+			current.UnreadRoles = test.unread
+			current.EveryAccountHoldsUnread = test.every
+			current.PublicIsRole = test.publicIsRole
+
+			err := validate("mysql", revokes("t3", "SELECT"), current)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// TestValidate_HappyPathUnread plans a revoke on a table whose role's holders
+// hold no principal the read did not read in full: one no holder holds, one
+// held through a membership the plan removes, and one held by a role named
+// PUBLIC, which is no holder of its own.
+func TestValidate_HappyPathUnread(t *testing.T) {
+	unread := []catalog.UnreadRole{{Name: "legacy", Cause: "it is a login"}}
+	tests := []struct {
+		name         string
+		desired      *schemamodel.Database
+		memberships  []catalog.RoleMembership
+		publicIsRole bool
+	}{
+		{
+			name: "held by a role the role does not hold", desired: revokes("t3", "SELECT"),
+			memberships: []catalog.RoleMembership{{Role: "legacy", Member: "other"}},
+		},
+		{
+			name: "held through a membership the plan removes",
+			desired: &schemamodel.Database{
+				Roles:         []schemamodel.Role{{Name: "r2", MemberOfStated: true}, {Name: "parent"}},
+				RevokedGrants: revokes("t3", "SELECT").RevokedGrants,
+			},
+			memberships: []catalog.RoleMembership{{Role: "parent", Member: "r2"}, {Role: "legacy", Member: "parent"}},
+		},
+		{
+			name: "held by a role named PUBLIC", desired: revokes("t3", "SELECT"), publicIsRole: true,
+			memberships: []catalog.RoleMembership{{Role: "legacy", Member: "PUBLIC"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			current := holding(readHolding(nil), test.memberships...)
+			current.UnreadRoles = unread
+			current.PublicIsRole = test.publicIsRole
+
+			c.Assert(validate("mysql", test.desired, current), qt.IsNil)
+		})
+	}
+}

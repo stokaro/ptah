@@ -564,8 +564,13 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 // privilege spelled the way no statement of the declaration uses, and
 // left beside the declared one it gives the catalog both spellings of
 // one column, which a later plan on the table is refused for.
+//
+// A login's privilege ([catalog.Grant.Login]) is removed only by a revoke
+// the desired state writes out. No description declares a login, so a
+// database the desired state was read from lacks its grants whatever the
+// login holds there.
 func (read grantRead) removes(grant catalog.Grant, ref difftypes.GrantRef, targetKey grantIdentity) bool {
-	if read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
+	if read.removable(ref) && !grant.Implicit && !grant.Login && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
 		return true
 	}
 	if read.revoked.covers(targetKey) {

@@ -202,7 +202,7 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// filter keeps. They are still ASKED.
 			field: "UnreadRoles", present: "legacy_login", absent: "nosuch_unread_role",
 			seed: func(s *catalog.Database) {
-				s.UnreadRoles = append(s.UnreadRoles, "legacy_login")
+				s.UnreadRoles = append(s.UnreadRoles, catalog.UnreadRole{Name: "legacy_login", Cause: "it is a login"})
 			},
 		},
 		{

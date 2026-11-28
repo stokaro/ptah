@@ -196,7 +196,10 @@ func TestMySQLRoleNamedPublicBesideMandatoryRolesE2E(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(read.PublicIsRole, qt.IsTrue)
-	c.Assert(read.EveryAccountHoldsUnread, qt.IsTrue)
+	c.Assert(read.EveryAccountHoldsUnread, qt.DeepEquals, &catalog.EveryAccountUnread{
+		Roles: []string{"mand" + suffix},
+		Cause: "a role named PUBLIC hides which roles every account holds, since each membership a read records for PUBLIC is that role's",
+	})
 	c.Assert(slices.DeleteFunc(read.RoleMemberships, func(membership catalog.RoleMembership) bool {
 		return membership.Member != "PUBLIC"
 	}), qt.HasLen, 0)

@@ -162,33 +162,47 @@ table "sim_added" {
 		"column|sim_added|email|2|varchar(255)|NO||<null>|")
 }
 
-// The table-scoping tests leave grants out explicitly. Without that selection,
-// a captured login grant belongs to the baseline, and a shared dev server must
-// refuse it: dropping the dev database would not remove the account's grant.
-func TestSimulateOnDev_MySQLRefusesCapturedLoginGrantsLive(t *testing.T) {
-	c := qt.New(t)
-	_, adminURL := liveMySQLURLsForSimulation(t)
-	targetURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_target")
-	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_dev")
-	targetConn := openLiveMySQL(c, targetURL)
-	targetName := liveMySQLDatabaseName(c, targetURL)
-	account := quoteMySQLString(fmt.Sprintf("p1240_%x", time.Now().UnixNano())) + "@'%'"
-	_, err := targetConn.ExecContext(c.Context(), "CREATE USER "+account)
+// grantSimulation is a target database holding the table sim_keep and a grant
+// of SELECT on the database to account, a dev database, and a plan that adds
+// the table sim_added and leaves grants in scope.
+type grantSimulation struct {
+	plan       atlasschema.ApplyRuntimePlan
+	target     *dbschema.DatabaseConnection
+	targetName string
+	targetURL  string
+	devURL     string
+	account    string
+	before     []string
+	grants     []string
+}
+
+// newGrantSimulation creates account with create, CREATE USER or CREATE ROLE,
+// through adminURL, and drops it when the test ends.
+func newGrantSimulation(c *qt.C, adminURL, create string) grantSimulation {
+	c.Helper()
+	run := grantSimulation{
+		targetURL: createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_target"),
+		devURL:    createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_dev"),
+		account:   quoteMySQLString(fmt.Sprintf("p1240_%x", time.Now().UnixNano())) + "@'%'",
+	}
+	run.target = openLiveMySQL(c, run.targetURL)
+	run.targetName = liveMySQLDatabaseName(c, run.targetURL)
+	_, err := run.target.ExecContext(c.Context(), create+" "+run.account)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
-		_, cleanupErr := targetConn.ExecContext(context.Background(), "DROP USER "+account)
+		_, cleanupErr := run.target.ExecContext(context.Background(), "DROP USER "+run.account)
 		c.Check(cleanupErr, qt.IsNil)
 	})
-	_, err = targetConn.ExecContext(c.Context(),
-		"GRANT SELECT ON "+sqlident.Quote(platform.MySQL, targetName)+".* TO "+account)
+	_, err = run.target.ExecContext(c.Context(),
+		"GRANT SELECT ON "+sqlident.Quote(platform.MySQL, run.targetName)+".* TO "+run.account)
 	c.Assert(err, qt.IsNil)
-	c.Assert(atlasschema.ApplySQL(c.Context(), targetConn, migrator.MigrationTxModeNone,
+	c.Assert(atlasschema.ApplySQL(c.Context(), run.target, migrator.MigrationTxModeNone,
 		"CREATE TABLE `sim_keep` (`id` int NOT NULL, `label` varchar(32) NOT NULL, PRIMARY KEY (`id`));"), qt.IsNil)
-	_, err = targetConn.ExecContext(c.Context(), "INSERT INTO sim_keep VALUES (1, 'kept')")
+	_, err = run.target.ExecContext(c.Context(), "INSERT INTO sim_keep VALUES (1, 'kept')")
 	c.Assert(err, qt.IsNil)
-	before := mySQLSchemaSnapshot(c, targetConn, targetName)
-	grants := mySQLQueryLines(c, targetConn, "SHOW GRANTS FOR "+account)
-	desiredPath := writeMySQLDesiredHCL(c, targetName, `
+	run.before = mySQLSchemaSnapshot(c, run.target, run.targetName)
+	run.grants = mySQLQueryLines(c, run.target, "SHOW GRANTS FOR "+run.account)
+	desiredPath := writeMySQLDesiredHCL(c, run.targetName, `
 table "sim_keep" {
   schema = schema.%[1]s
   column "id" {
@@ -212,24 +226,54 @@ table "sim_added" {
   }
 }
 `)
-	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
+	run.plan, err = atlasschema.PrepareApply(c.Context(), run.target, atlasschema.ApplyRuntimeOptions{
 		ToURLs:  []string{"file://" + desiredPath},
 		TxMode:  migrator.MigrationTxModeNone,
-		Runtime: must.Must(builtin.New())})
+		Runtime: must.Must(builtin.New()),
+	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.HasChanges(), qt.IsTrue)
+	c.Assert(run.plan.HasChanges(), qt.IsTrue)
+	return run
+}
 
-	err = plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: devURL, TargetURL: targetURL})
+// A role's grant belongs to the captured state, so the baseline replays it, and
+// a shared dev server must refuse that: dropping the dev database would not
+// remove the role's grant. The table-scoping tests leave grants out explicitly.
+func TestSimulateOnDev_MySQLRefusesACapturedRoleGrantLive(t *testing.T) {
+	c := qt.New(t)
+	_, adminURL := liveMySQLURLsForSimulation(t)
+	run := newGrantSimulation(c, adminURL, "CREATE ROLE")
+
+	err := run.plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: run.devURL, TargetURL: run.targetURL})
 
 	var simulation *atlasschema.SimulationError
 	c.Assert(err, qt.ErrorAs, &simulation)
 	c.Assert(simulation.Stage, qt.Equals, "baseline")
-	c.Assert(err.Error(), qt.Contains, "rehearsal baseline refuses privilege or role mutation")
-	c.Assert(mySQLSchemaSnapshot(c, targetConn, targetName), qt.DeepEquals, before)
-	c.Assert(mySQLQueryLines(c, targetConn, "SELECT label FROM sim_keep WHERE id = 1"), qt.DeepEquals, []string{"kept"})
-	c.Assert(mySQLQueryLines(c, targetConn, "SHOW GRANTS FOR "+account), qt.DeepEquals, grants)
-	devConn := openLiveMySQL(c, devURL)
-	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, devURL)), qt.HasLen, 0)
+	c.Assert(err.Error(), qt.Contains, "rehearsal baseline refuses")
+	c.Assert(mySQLSchemaSnapshot(c, run.target, run.targetName), qt.DeepEquals, run.before)
+	c.Assert(mySQLQueryLines(c, run.target, "SELECT label FROM sim_keep WHERE id = 1"), qt.DeepEquals, []string{"kept"})
+	c.Assert(mySQLQueryLines(c, run.target, "SHOW GRANTS FOR "+run.account), qt.DeepEquals, run.grants)
+	devConn := openLiveMySQL(c, run.devURL)
+	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, run.devURL)), qt.HasLen, 0)
+}
+
+// A login's grant is read for the revoke cover check and is no part of the
+// captured state, so the baseline leaves it out: the rehearsal runs, and the
+// login holds what it held, with nothing on the dev database. Without the
+// rule the baseline replays the GRANT and the guard refuses the rehearsal.
+func TestSimulateOnDev_MySQLLeavesALoginsGrantOutOfTheBaselineLive(t *testing.T) {
+	c := qt.New(t)
+	_, adminURL := liveMySQLURLsForSimulation(t)
+	run := newGrantSimulation(c, adminURL, "CREATE USER")
+
+	err := run.plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: run.devURL, TargetURL: run.targetURL})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(mySQLSchemaSnapshot(c, run.target, run.targetName), qt.DeepEquals, run.before)
+	c.Assert(mySQLQueryLines(c, run.target, "SELECT label FROM sim_keep WHERE id = 1"), qt.DeepEquals, []string{"kept"})
+	c.Assert(mySQLQueryLines(c, run.target, "SHOW GRANTS FOR "+run.account), qt.DeepEquals, run.grants)
+	devConn := openLiveMySQL(c, run.devURL)
+	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, run.devURL)), qt.HasLen, 0)
 }
 
 func TestSimulateOnDev_MySQLRefusesAThirdDatabaseLive(t *testing.T) {

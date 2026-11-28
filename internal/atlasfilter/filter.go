@@ -1274,9 +1274,9 @@ func (s *exclusionState) noteRolesOutOfScope(roles []catalog.Role) {
 // [noteRolesOutOfScope] gives: they are not part of the description, and a
 // role that holds one holds privileges the read does not state whatever a
 // filter keeps.
-func (s *exclusionState) noteUnreadRoles(roles []string) {
+func (s *exclusionState) noteUnreadRoles(roles []catalog.UnreadRole) {
 	for _, role := range roles {
-		s.matches("role", role)
+		s.matches("role", role.Name)
 	}
 }
 
@@ -2490,7 +2490,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// privileges the read does not state.
 		PublicIsRole:            schema.PublicIsRole,
 		UnreadRoles:             slices.Clone(schema.UnreadRoles),
-		EveryAccountHoldsUnread: schema.EveryAccountHoldsUnread,
+		EveryAccountHoldsUnread: cloneEveryAccountUnread(schema.EveryAccountHoldsUnread),
 		// Filtering narrows what a description contains; it does not widen what
 		// the description claimed to cover. This is a field-by-field
 		// constructor, which is exactly the shape that drops a new field in
@@ -2893,4 +2893,13 @@ func constraintTypes(constraintType string) []string {
 		}
 	}
 	return types
+}
+
+// cloneEveryAccountUnread is unread with its own copy of the roles, so a
+// filtered description shares nothing a caller could change with its source.
+func cloneEveryAccountUnread(unread *catalog.EveryAccountUnread) *catalog.EveryAccountUnread {
+	if unread == nil {
+		return nil
+	}
+	return &catalog.EveryAccountUnread{Roles: slices.Clone(unread.Roles), Cause: unread.Cause}
 }

@@ -119,7 +119,8 @@ func Find(
 	privileges = onTable(privileges, all.All("TABLE"))
 	holding := holders(current, role, target.Memberships)
 	held := func(grantee string) bool {
-		return holding[grantee] || everyAccount(current, grantee)
+		_, holds := holding[grantee]
+		return holds || everyAccount(current, grantee)
 	}
 	scope := scopeOf(current, table)
 	for _, grant := range current.Grants {
@@ -283,7 +284,10 @@ func removedFromTable(desired *schemamodel.Database, grant catalog.Grant, table 
 // revokes the privilege before it removes the membership, and nothing reads
 // the table between the two statements. Where PUBLIC is a role of that name
 // ([catalog.Database.PublicIsRole]), it is no holder of its own.
-func holders(current *catalog.Database, role string, memberships membershipplan.Declared) map[string]bool {
+//
+// Each holder maps to the member it is held through: empty for role and
+// PUBLIC, and for any other holder a holder that holds it directly.
+func holders(current *catalog.Database, role string, memberships membershipplan.Declared) map[string]string {
 	held := make(map[string][]string)
 	for _, membership := range current.RoleMemberships {
 		if memberships.Fate(current, membership) != membershipplan.Removed {
@@ -293,18 +297,18 @@ func holders(current *catalog.Database, role string, memberships membershipplan.
 	for key := range memberships.Stated() {
 		held[key.Member] = append(held[key.Member], key.Role)
 	}
-	seen := map[string]bool{role: true}
+	seen := map[string]string{role: ""}
 	queue := []string{role}
 	if !current.PublicIsRole {
-		seen[publicGrantee] = true
+		seen[publicGrantee] = ""
 		queue = append(queue, publicGrantee)
 	}
 	for len(queue) > 0 {
 		member := queue[0]
 		queue = queue[1:]
 		for _, granted := range held[member] {
-			if !seen[granted] {
-				seen[granted] = true
+			if _, reached := seen[granted]; !reached {
+				seen[granted] = member
 				queue = append(queue, granted)
 			}
 		}
@@ -418,6 +422,16 @@ func planned(declared schemamodel.Grant, current *catalog.Database, privileges [
 // plan finds nothing under the table's name to revoke and reads as synced,
 // and a member of the role keeps the privilege.
 //
+// A revoke is refused too where a holder of the revoke's role, through the
+// memberships the plan keeps, holds privileges the read does not state
+// ([catalog.Database.UnreadRoles]), or where every account does
+// ([catalog.Database.EveryAccountHoldsUnread]): no cover can be ruled out
+// then, and a revoke planned in silence can leave a member reading the table.
+// Measured on MySQL 26.10.0: with the role 'nm@localhost'@'%' holding SELECT
+// on t1 beside the login 'nm'@'localhost', the role nmh holding it and
+// SELECT on t1, and the login nmu holding nmh, REVOKE SELECT ON t1 FROM nmh
+// succeeds and nmu still reads t1.
+//
 // target is what [Find] reads, for dialect.
 func Validate(dialect string, desired *schemamodel.Database, current *catalog.Database, target Target) error {
 	if !platform.TableRevokeTakesOnlyTableGrants(dialect) || desired == nil || current == nil {
@@ -428,6 +442,7 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 		if revoke.OnTable == "" {
 			continue
 		}
+		problems = append(problems, unreadHolderErrs(current, revoke, target)...)
 		covers, _ := Find(desired, current, revoke.Role, revoke.Privileges, revoke.OnTable, target)
 		for _, cover := range covers {
 			problems = append(problems, refused{
@@ -439,6 +454,47 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 		}
 	}
 	return errors.Join(problems...)
+}
+
+// unreadHolderErrs refuses revoke where every account holds roles the read
+// does not state, and once for each principal the read did not read in full
+// that a holder of revoke's role holds, as [Validate] says.
+func unreadHolderErrs(current *catalog.Database, revoke schemamodel.Grant, target Target) []error {
+	var problems []error
+	what := fmt.Sprintf("a revoke of %s on table %s from %q", strings.Join(revoke.Privileges, ", "), revoke.OnTable, revoke.Role)
+	if unread := current.EveryAccountHoldsUnread; unread != nil {
+		held := "roles"
+		if len(unread.Roles) > 0 {
+			held = "the roles " + strings.Join(unread.Roles, ", ")
+		}
+		problems = append(problems, fmt.Errorf(
+			"every account holds %s whose memberships the read does not state: %s; so %s cannot be shown to take the privilege",
+			held, unread.Cause, what))
+	}
+	if len(current.UnreadRoles) == 0 {
+		return problems
+	}
+	role := target.Semantics.StoredName(revoke.Role)
+	holding := holders(current, role, target.Memberships)
+	for _, unread := range current.UnreadRoles {
+		member, held := holding[unread.Name]
+		if !held || unread.Name == role {
+			continue
+		}
+		holder := fmt.Sprintf("role %q holds %s", revoke.Role, unread.Name)
+		remedy := "end the membership that passes " + unread.Name + " on, or leave the revoke out"
+		switch {
+		case member == publicGrantee && !current.PublicIsRole:
+			holder = "every account holds " + unread.Name
+			remedy = "leave the revoke out"
+		case member != role:
+			holder = fmt.Sprintf("role %q holds %s through %s", revoke.Role, unread.Name, member)
+		}
+		problems = append(problems, fmt.Errorf(
+			"%s, whose privileges the read did not read in full: %s; so %s cannot be shown to take the privilege: %s",
+			holder, unread.Cause, what, remedy))
+	}
+	return problems
 }
 
 // refused is a declared revoke on a table and one grant that keeps what it

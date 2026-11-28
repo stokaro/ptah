@@ -1178,9 +1178,11 @@ func replayedColumnSequences(tables []catalog.Table) map[string]string {
 func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schemamodel.Grant {
 	grants := make([]schemamodel.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
-		if dbGrant.IsPartialRevoke || dbGrant.Implicit {
+		if dbGrant.IsPartialRevoke || dbGrant.Implicit || dbGrant.Login {
 			// An implicit row is what an object holds because it exists, which
-			// the object's own declaration already implies.
+			// the object's own declaration already implies. A login's grant
+			// names an account no statement of the description creates, so
+			// applied elsewhere it would be refused or reach another account.
 			continue
 		}
 		grants = append(grants, describedGrant(dbGrant, replayed))

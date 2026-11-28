@@ -58,6 +58,13 @@ func roleLoginReads(c *qt.C, server mysqlFamilyServer, database, login, role str
 	return reads
 }
 
+// unreadLoginSkip is the reason the reach rules give for the role lr, which
+// holds the login legacy: the read reads the login's grants on the database
+// and not its global privileges.
+const unreadLoginSkip = "the read did not read every privilege of legacy, which lr can use: " +
+	"it is a login, and the read reads a login's grants on the databases it covers, " +
+	"not its global privileges or its grants on database name patterns; so their reach was not measured"
+
 // reachSkips runs `ptah schema security` against dbURL and states the reach
 // rules it skipped for a reason naming a role whose name ends in suffix, one
 // line each, with the suffix taken off.
@@ -137,43 +144,62 @@ func TestMariaDBPublicRoleDatabaseGrantReachE2E(t *testing.T) {
 // active, and is refused the third with Error 1142. The analysis measures the
 // other role's own reach, reports the role named PUBLIC and the role it holds
 // as roles, the role named PUBLIC among the roles nobody holds, and no grant
-// to PUBLIC as one every role holds.
+// to PUBLIC as one every role holds. A role named pUbLiC is the same case:
+// the read folds the name as it folds MariaDB's grantee.
 func TestMySQLRoleNamedPublicReachE2E(t *testing.T) {
-	c := qt.New(t)
-	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
-	database := server.database(c, "public_role_reach")
-	suffix := fmt.Sprintf("_%d", time.Now().UnixNano()%1_000_000_000_000)
-	big, other := granteeIdentifier("big7"+suffix), granteeIdentifier("other7"+suffix)
-	c.Cleanup(func() {
-		_, err := server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+big+", "+other+", PUBLIC")
-		c.Check(err, qt.IsNil)
-	})
-	partialRevokeExec(c, server, []string{
-		"CREATE TABLE " + granteeIdentifier(database) + ".a (id int PRIMARY KEY)",
-		"CREATE TABLE " + granteeIdentifier(database) + ".b (id int PRIMARY KEY)",
-		"CREATE TABLE " + granteeIdentifier(database) + ".c (id int PRIMARY KEY)",
-		"CREATE ROLE PUBLIC, " + big + ", " + other,
-		"GRANT SELECT ON " + granteeIdentifier(database) + ".* TO " + big,
-		"GRANT " + big + " TO PUBLIC",
-		"GRANT SELECT ON " + granteeIdentifier(database) + ".a TO " + other,
-		"GRANT SELECT ON " + granteeIdentifier(database) + ".c TO " + other,
-		"GRANT SELECT ON " + granteeIdentifier(database) + ".b TO PUBLIC",
-	})
-	target := server.url("mysql", database)
+	tests := []struct {
+		public string
+		want   []string
+	}{
+		{public: "PUBLIC", want: []string{
+			"ROL04 info PUBLIC",
+			"ROL04 info other7",
+			"roles/read-reach error PUBLIC 3/3 through=[big7]",
+			"roles/read-reach error big7 3/3 through=[]",
+			"roles/read-reach warning other7 2/3 through=[]",
+		}},
+		{public: "pUbLiC", want: []string{
+			"ROL04 info other7",
+			"ROL04 info pUbLiC",
+			"roles/read-reach error big7 3/3 through=[]",
+			"roles/read-reach warning other7 2/3 through=[]",
+			"roles/read-reach error pUbLiC 3/3 through=[big7]",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.public, func(t *testing.T) {
+			c := qt.New(t)
+			server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
+			database := server.database(c, "public_role_reach")
+			suffix := fmt.Sprintf("_%d", time.Now().UnixNano()%1_000_000_000_000)
+			big, other := granteeIdentifier("big7"+suffix), granteeIdentifier("other7"+suffix)
+			named := granteeIdentifier(test.public)
+			c.Cleanup(func() {
+				_, err := server.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+big+", "+other+", "+named)
+				c.Check(err, qt.IsNil)
+			})
+			partialRevokeExec(c, server, []string{
+				"CREATE TABLE " + granteeIdentifier(database) + ".a (id int PRIMARY KEY)",
+				"CREATE TABLE " + granteeIdentifier(database) + ".b (id int PRIMARY KEY)",
+				"CREATE TABLE " + granteeIdentifier(database) + ".c (id int PRIMARY KEY)",
+				"CREATE ROLE " + named + ", " + big + ", " + other,
+				"GRANT SELECT ON " + granteeIdentifier(database) + ".* TO " + big,
+				"GRANT " + big + " TO " + named,
+				"GRANT SELECT ON " + granteeIdentifier(database) + ".a TO " + other,
+				"GRANT SELECT ON " + granteeIdentifier(database) + ".c TO " + other,
+				"GRANT SELECT ON " + granteeIdentifier(database) + ".b TO " + named,
+			})
+			target := server.url("mysql", database)
 
-	stdout, err := runPtahNativeStdout("schema", "security", "--db-url", target, "--format", "json", "--fail-on", "none")
-	lines := publicFindingLines(c, target, suffix)
+			stdout, err := runPtahNativeStdout("schema", "security", "--db-url", target, "--format", "json", "--fail-on", "none")
+			lines := publicFindingLines(c, target, suffix)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
-	c.Assert(stdout, qt.Not(qt.Contains), `"code": "PRV03"`)
-	c.Assert(roleLoginReads(c, server, database, "o7l"+suffix, other), qt.Equals, 2)
-	c.Assert(lines, qt.DeepEquals, []string{
-		"ROL04 info PUBLIC",
-		"ROL04 info other7",
-		"roles/read-reach error PUBLIC 3/3 through=[big7]",
-		"roles/read-reach error big7 3/3 through=[]",
-		"roles/read-reach warning other7 2/3 through=[]",
-	})
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
+			c.Assert(stdout, qt.Not(qt.Contains), `"code": "PRV03"`)
+			c.Assert(roleLoginReads(c, server, database, "o7l"+suffix, other), qt.Equals, 2)
+			c.Assert(lines, qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // TestMySQLReachSkipsTheRolesHoldingAnUnreadAccountE2E grants a role an
@@ -211,8 +237,8 @@ func TestMySQLReachSkipsTheRolesHoldingAnUnreadAccountE2E(t *testing.T) {
 		"roles/read-reach error lother 2/2 through=[]",
 	})
 	c.Assert(skips, qt.DeepEquals, []string{
-		"roles/read-reach: the read did not read the privileges of legacy, which lr can use, so their reach was not measured",
-		"roles/write-reach: the read did not read the privileges of legacy, which lr can use, so their reach was not measured",
+		"roles/read-reach: " + unreadLoginSkip,
+		"roles/write-reach: " + unreadLoginSkip,
 	})
 }
 

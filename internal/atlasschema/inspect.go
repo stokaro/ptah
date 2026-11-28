@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
 	"ptah.run/internal/unmodelednote"
+	"ptah.run/internal/unreadroles"
 	"ptah.run/internal/unreadtables"
 	"ptah.run/internal/urlname"
 )
@@ -192,6 +193,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// A table the read found and left out is in no rendered document, as
 	// through the built-in engines; the note is the only place it shows.
 	unreadtables.Report(opts.Diagnostics, schema)
+	unreadroles.Report(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.reportUnmodeled = true
 	validatedOpts.PrepareSchema = nil

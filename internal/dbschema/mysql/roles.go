@@ -183,6 +183,32 @@ func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSour
 	return grants, nil
 }
 
+// markLoginGrants marks each grant whose grantee is no role of roles as a
+// login's ([catalog.Grant.Login]). On MySQL and MariaDB a grantee on host %
+// is a role or a login, and the read reads both: a declared grant to a login
+// it holds is then not planned again, and its rollback does not revoke what the
+// login held before. Marked, a login's grant is left out of a description and
+// out of what a comparison removes: measured on MySQL 8.4.13 and 26.10.0 and
+// MariaDB 11.8.9 and 12.3.3, after CREATE USER app and GRANT SELECT, INSERT ON
+// rva.* TO app, a comparison of rva with a database holding the same tables
+// otherwise plans REVOKE INSERT ON rva.* FROM app, and `ptah db read` prints
+// the GRANT with no statement creating app. MariaDB's PUBLIC is every
+// account's grantee and no login. It reads as PUBLIC in upper case, and a
+// login may be named public: MariaDB 11.8.9 and 12.3.3 accept CREATE USER
+// 'public'@'%', so the name is matched exactly, as [withoutPublic] matches it.
+func markLoginGrants(grants []catalog.Grant, roles []catalog.Role, mariaDB bool) []catalog.Grant {
+	isRole := make(map[string]bool, len(roles))
+	for _, role := range roles {
+		isRole[role.Name] = true
+	}
+	for index := range grants {
+		grantee := grants[index].Role
+		everyAccount := mariaDB && grantee == publicGrantee
+		grants[index].Login = !isRole[grantee] && !everyAccount
+	}
+	return grants
+}
+
 // A MariaDB bare grantee names the role when one has that name, and otherwise
 // the login on host %. A login that shares a role's name must not contribute
 // its privileges to the role. Account names compare by bytes, including case.
@@ -290,7 +316,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
-	schema.Grants = grants
+	schema.Grants = markLoginGrants(grants, roles, account.mariaDB)
 
 	memberships, err := r.readRoleMemberships(ctx, names)
 	if err != nil {
@@ -336,8 +362,9 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	if err := r.readConnectedRole(ctx, schema, names); err != nil {
 		return err
 	}
-	refuseCollisions(schema, names.Collisions())
-	schema.UnreadRoles = unreadRoles(schema)
+	collisions := names.Collisions()
+	refuseCollisions(schema, collisions)
+	schema.UnreadRoles = unreadCauses(unreadRoles(schema), names, collisions)
 	return nil
 }
 
@@ -402,6 +429,51 @@ func unreadRoles(schema *catalog.Database) []string {
 	}
 	slices.Sort(unread)
 	return slices.Compact(unread)
+}
+
+// unreadCauses gives each principal of unread the cause the read did not
+// read its privileges, from the account names gave it: a name two accounts
+// read as, a login on host %, whose grants on the databases the read covers
+// are read and whose global privileges are not ([Reader.readWideGrants] reads
+// roles alone), or an account on another host, whose privileges the read does
+// not read at all.
+func unreadCauses(unread []string, names *mysqlgrants.Names, collisions []mysqlgrants.Collision) []catalog.UnreadRole {
+	if len(unread) == 0 {
+		return nil
+	}
+	shared := make(map[string][]mysqlgrants.Account, len(collisions))
+	for _, collision := range collisions {
+		shared[collision.Name] = collision.Accounts
+	}
+	roles := make([]catalog.UnreadRole, 0, len(unread))
+	for _, name := range unread {
+		roles = append(roles, catalog.UnreadRole{Name: name, Cause: unreadCause(name, names, shared[name])})
+	}
+	return roles
+}
+
+// unreadCause is [unreadCauses] for one principal.
+func unreadCause(name string, names *mysqlgrants.Names, shared []mysqlgrants.Account) string {
+	if len(shared) > 0 {
+		accounts := make([]string, 0, len(shared))
+		for _, account := range shared {
+			accounts = append(accounts, account.Grantee())
+		}
+		return "the accounts " + strings.Join(accounts, " and ") +
+			" read as this one name, so the read leaves its privileges out"
+	}
+	account, named := names.Account(name)
+	switch {
+	case !named:
+		return "the read found no account of this name"
+	case account.Host == "%":
+		// A role on host % is a role the read describes on MySQL, and a
+		// MariaDB role has no host, so this account is a login.
+		return "it is a login, and the read reads a login's grants on the databases it covers, " +
+			"not its global privileges or its grants on database name patterns"
+	default:
+		return "it is the account " + account.Grantee() + ", and the read reads the privileges of roles and of accounts on host % alone"
+	}
 }
 
 // publicGrantee is the grantee MariaDB names PUBLIC, whose privileges every

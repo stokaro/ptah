@@ -108,6 +108,13 @@ func (n *Names) Name(account Account) string {
 	return name
 }
 
+// Account returns the first account [Names.Name] gave name, and false where
+// it gave name to none.
+func (n *Names) Account(name string) (Account, bool) {
+	account, named := n.named[name]
+	return account, named
+}
+
 // Collision is a name two accounts or more read as, so their privileges and
 // memberships cannot be told apart.
 type Collision struct {

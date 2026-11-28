@@ -142,3 +142,67 @@ func TestGrantsWithOptions_ADeclarationLeavesARoleItDoesNotManage(t *testing.T) 
 		})
 	}
 }
+
+// TestGrantsWithOptions_ACompleteDesiredStateLeavesALoginsGrants is a grant a
+// login holds on the --from side of two server reads. No read declares a
+// login, so the other side lacking its grant says nothing about what the
+// login may do there.
+func TestGrantsWithOptions_ACompleteDesiredStateLeavesALoginsGrants(t *testing.T) {
+	tests := []struct {
+		name  string
+		grant catalog.Grant
+	}{
+		{name: "on a table", grant: catalog.Grant{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", Schema: "rva", ObjectName: "t1", Login: true}},
+		{name: "on a database", grant: catalog.Grant{Role: "app", Privilege: "INSERT", ObjectType: "SCHEMA", ObjectName: "rva", Login: true}},
+		{name: "on a column", grant: catalog.Grant{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "rva", ObjectName: "t1", Column: "v", Login: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := &catalog.Database{Grants: []catalog.Grant{test.grant}}
+
+			c.Assert(grantRemovals(database, true), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestGrantsWithOptions_ARevokeReachesALoginsGrant is a declared revoke of a
+// privilege a login holds. The declaration names the login, so the revoke is
+// planned.
+func TestGrantsWithOptions_ARevokeReachesALoginsGrant(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+	desired := &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{
+		Role: "app", Privileges: []string{"SELECT"}, OnTable: "t1",
+	}}}
+	database := &catalog.Database{Grants: []catalog.Grant{
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Login: true},
+	}}
+
+	compare.GrantsWithOptions(desired, database, diff, identifier.ForDialect("mysql"), compare.GrantOptions{DesiredComplete: true})
+
+	c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"},
+	})
+}
+
+// TestGrantsWithOptions_ALoginsGrantSatisfiesADeclaredGrant is a declared grant
+// a login holds already. It is not planned again, so its rollback revokes
+// nothing the login held before.
+func TestGrantsWithOptions_ALoginsGrantSatisfiesADeclaredGrant(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+	desired := &schemamodel.Database{Grants: []schemamodel.Grant{{
+		Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "t1",
+	}}}
+	database := &catalog.Database{Grants: []catalog.Grant{
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Login: true},
+	}}
+
+	compare.GrantsWithOptions(desired, database, diff, identifier.ForDialect("mysql"), compare.GrantOptions{})
+
+	c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{
+		{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "t1"},
+	})
+	c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+}
