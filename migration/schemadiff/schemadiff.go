@@ -161,6 +161,11 @@ func compareReportingUndecidedAdditions(
 	// takes the ones the database holds, before anything reads the
 	// declaration.
 	desired = compare.HeldMaterializedViewOptions(desired, database, identifierSemantics)
+	// A table whose drop the selection blocks leaves the comparison with all
+	// its parts before anything pairs them: the table preparation, the owned
+	// features and every comparator below see the database without it.
+	database = compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics,
+		compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema))
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it. The renames read the
 	// index kinds the tables' preparation states, as the index comparison does.
@@ -189,9 +194,6 @@ func compareReportingUndecidedAdditions(
 	// four surfaces resolve a desired state independently, and one of them
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
-	// A table whose drop the selection blocks leaves the comparison with all
-	// its parts, before any comparator pairs them.
-	database = compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics, cov)
 
 	compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules)
 

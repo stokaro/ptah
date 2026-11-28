@@ -25,7 +25,12 @@ import (
 // leave the comparison with it. Each comparator pairs its own kind, so a
 // constraint, an index or a trigger of a table nobody declares reaches the
 // diff as a removal of its own, and the SQL strips the table the drop leaves
-// in place.
+// in place. A feature an owner keeps past its table, such as a ClickHouse row
+// policy, would be dropped alone the same way.
+//
+// The facet check reads the feature coverage the source declares, since the
+// owners have not made their effective state yet: they must not see the table
+// either.
 //
 // database is not modified. The result is database itself when nothing is
 // blocked.
@@ -81,9 +86,13 @@ func WithoutBlockedTables(
 	return withoutTables(database, blocked, dialect, semantics)
 }
 
-// withoutTables is a copy of database without tables and the parts that
-// belong to them. A part names its table by schema and name, or, for a row
-// level security policy and an owned sequence, through a qualified name.
+// withoutTables is a copy of database without tables and the parts a
+// comparison pairs on its own: indexes, constraints, triggers, row level
+// security policies, table grants, owned sequences and feature objects bound
+// to the table. A part names its table by schema and name, or, for a policy
+// and an owned sequence, through a qualified name. What an exclude selector
+// keeps out of scope stays: the plan never removes it, and the comparison
+// reads it only beside a part it pairs.
 func withoutTables(database *catalog.Database, tables map[tableIdentity]struct{}, dialect string, semantics identifier.Semantics) *catalog.Database {
 	in := func(schema, table string) bool {
 		_, ok := tables[tableMapIdentity(schema, table, dialect, semantics)]
@@ -111,20 +120,8 @@ func withoutTables(database *catalog.Database, tables map[tableIdentity]struct{}
 		owner, ok := tableref.ParseColumn(sequence.OwnedBy)
 		return ok && in(cmp.Or(owner.Schema, sequence.Schema), owner.Table)
 	})
-	out.UnmodeledObjects = without(database.UnmodeledObjects, func(object catalog.UnmodeledObject) bool {
-		return object.Table != "" && in(object.Schema, object.Table)
-	})
 	out.FeatureObjects = database.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 		return ref.Parent.Empty() || !in(ref.Schema.Source, ref.Parent.Source)
-	})
-	out.OutOfScope.Indexes = without(database.OutOfScope.Indexes, func(index catalog.Index) bool {
-		return in(index.Schema, index.TableName)
-	})
-	out.OutOfScope.Constraints = without(database.OutOfScope.Constraints, func(constraint catalog.Constraint) bool {
-		return in(constraint.Schema, constraint.TableName)
-	})
-	out.OutOfScope.Triggers = without(database.OutOfScope.Triggers, func(trigger catalog.Trigger) bool {
-		return in(trigger.Schema, trigger.Table)
 	})
 	return &out
 }
