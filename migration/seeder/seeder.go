@@ -37,10 +37,14 @@ import (
 
 	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -443,11 +447,105 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 	// Deliberately outside the seed writer: the tracker table is metadata that
 	// must exist before either transactional or no-transaction seed execution
 	// starts, and this statement is not user-provided SQL.
-	_, err := conn.ExecContext(ctx, trackerDDL(conn.Info().Dialect))
-	if err != nil {
-		return fmt.Errorf("create %s table: %w", trackerName, err)
+	_, err := conn.ExecContext(ctx, trackerDDL(conn.Info().Dialect, trackerTable(conn)))
+	if err == nil {
+		return nil
 	}
-	return nil
+	if kept, connected, apart := ledgerSchemaApart(conn); apart {
+		return fmt.Errorf("create %s table in schema %q, where Ptah keeps its tables when the URL names no schema; "+
+			"for a user that cannot create tables there, add schema=%s to the URL: %w", trackerName, kept, connected, err)
+	}
+	return fmt.Errorf("create %s table: %w", trackerName, err)
+}
+
+// trackerTable is the tracker table as the seeder's statements name it:
+// schema_seeds, qualified by the schema the connection keeps Ptah's tables in
+// where it names one (catalog.ServerInfo.MetadataSchema). On SQL Server that
+// is the URL's schema parameter, else dbo, so every account that seeds one
+// database reads and writes one ledger, whatever its default schema. Left
+// unqualified there, the ledger is created in the default schema of the first
+// account that seeds, and an account with another default schema creates a
+// second one and applies every seed again.
+func trackerTable(conn *dbschema.DatabaseConnection) string {
+	info := conn.Info()
+	if info.MetadataSchema == "" {
+		return trackerName
+	}
+	return sqlident.Quote(info.Dialect, info.MetadataSchema) + "." + sqlident.Quote(info.Dialect, trackerName)
+}
+
+// refuseStrandedLedger refuses a run that would read an empty ledger in the
+// schema the connection keeps Ptah's tables in while a ledger stands in the
+// default schema of the connection's user, as one does after that user seeded
+// through a URL naming its schema. Reading the empty ledger would apply every
+// seed again. Naming the schema or moving the table is the operator's choice,
+// so this refuses rather than picking one. A table of the ledger's name
+// without its columns ([ledgerColumns]) belongs to another tool and holds no
+// record of a seed, so the run starts its ledger where it keeps it.
+func refuseStrandedLedger(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	kept, connected, apart := ledgerSchemaApart(conn)
+	if !apart {
+		return nil
+	}
+	inKept, err := ledgerExistsIn(ctx, conn, kept)
+	if err != nil || inKept {
+		return err
+	}
+	inConnected, err := ledgerExistsIn(ctx, conn, connected)
+	if err != nil || !inConnected {
+		return err
+	}
+	return fmt.Errorf("found seed ledger %q in schema %q, the default schema of the connection's user, and none in "+
+		"schema %q, where this run keeps and reads it: add schema=%s to the URL to keep using the ledger where it is; "+
+		"move the table into schema %q; or add schema=%s to the URL to start a new ledger in schema %q",
+		trackerName, connected, kept, connected, kept, kept, kept)
+}
+
+// ledgerColumns are the columns of the tracker table, in the order the record
+// of a seed names them.
+var ledgerColumns = []string{"seed_path", "env", "checksum", "applied_at"}
+
+// ledgerSchemaApart reports the schema the connection keeps Ptah's tables in
+// and the schema it works in, where the two differ.
+func ledgerSchemaApart(conn *dbschema.DatabaseConnection) (kept, connected string, apart bool) {
+	info := conn.Info()
+	kept, connected = info.MetadataSchema, info.Schema
+	return kept, connected, kept != "" && connected != "" && kept != connected
+}
+
+// ledgerExistsIn reports whether schema holds the tracker table with every one
+// of its columns, asking the catalog queries the migrator asks about its own
+// tables rather than the table, which may belong to another tool.
+func ledgerExistsIn(ctx context.Context, conn *dbschema.DatabaseConnection, schema string) (bool, error) {
+	dialect := conn.Info().Dialect
+	catalog := builtin.Lookup(dialect).Catalog
+	if catalog == nil {
+		return false, fmt.Errorf("look for the %s table: no catalog query for %s", trackerName, dialect)
+	}
+	query, args, err := catalog.PresenceQuery(migratorext.Table{
+		ConfiguredSchema: schema,
+		ConnectionSchema: conn.Info().Schema,
+		Name:             trackerName,
+		Quote:            func(name string) string { return sqlident.Quote(dialect, name) },
+	})
+	if err != nil {
+		return false, fmt.Errorf("look for the %s table in %q: %w", trackerName, schema, err)
+	}
+	var count int64
+	if err := conn.QueryRowContext(ctx, sqlutil.Rebind(dialect, query), args...).Scan(&count); err != nil {
+		return false, fmt.Errorf("look for the %s table in %q: %w", trackerName, schema, err)
+	}
+	if count == 0 {
+		return false, nil
+	}
+	described := migratorext.Table{ConfiguredSchema: schema, ConnectionSchema: conn.Info().Schema, Name: trackerName}
+	for _, column := range ledgerColumns {
+		held, err := catalog.ColumnExists(ctx, conn, described, column)
+		if err != nil || !held {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // trackerDDL is the statement that creates the tracker table when it is absent.
@@ -466,16 +564,21 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // The internal/builtindialects
 // file of each engine records the measurement behind its statement.
 //
-// Every name is unqualified, so each guard looks in the schema the CREATE
-// TABLE and every later tracker statement resolve against.
-func trackerDDL(dialect string) string {
+// table is the tracker table as [trackerTable] names it, and every guard
+// looks for the table under that name, so it looks where the CREATE TABLE and
+// every later tracker statement write.
+func trackerDDL(dialect, table string) string {
+	statement := portableTrackerDDL
 	if described, _ := platform.Lookup(dialect); described.Seeds.Tracker != "" {
-		return described.Seeds.Tracker
+		statement = described.Seeds.Tracker
 	}
-	return portableTrackerDDL
+	return strings.NewReplacer(
+		descriptor.TrackerTable, table,
+		descriptor.TrackerTableText, strings.ReplaceAll(table, "'", "''"),
+	).Replace(statement)
 }
 
-const portableTrackerDDL = `CREATE TABLE IF NOT EXISTS schema_seeds (
+const portableTrackerDDL = `CREATE TABLE IF NOT EXISTS ` + descriptor.TrackerTable + ` (
     seed_path VARCHAR(512) PRIMARY KEY,
     env VARCHAR(128) NOT NULL,
     checksum CHAR(64) NOT NULL,
@@ -493,6 +596,9 @@ func readApplied(ctx context.Context, conn *dbschema.DatabaseConnection) (map[st
 		}
 		return applied, nil
 	}
+	if err := refuseStrandedLedger(ctx, conn); err != nil {
+		return nil, err
+	}
 	if err := ensureTracker(ctx, conn); err != nil {
 		return nil, err
 	}
@@ -508,7 +614,7 @@ func readApplied(ctx context.Context, conn *dbschema.DatabaseConnection) (map[st
 // the table permits, and reading in applied_at order is what decides which of
 // them the checksum comparison uses. See [trackerDDL] for both tables.
 func appliedSeeds(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]string, error) {
-	rows, err := conn.QueryContext(ctx, "SELECT seed_path, checksum FROM schema_seeds ORDER BY applied_at")
+	rows, err := conn.QueryContext(ctx, "SELECT seed_path, checksum FROM "+trackerTable(conn)+" ORDER BY applied_at")
 	if err != nil {
 		return nil, fmt.Errorf("query applied seeds: %w", err)
 	}
@@ -529,12 +635,13 @@ func appliedSeeds(ctx context.Context, conn *dbschema.DatabaseConnection) (map[s
 }
 
 func recordSeed(ctx context.Context, conn *dbschema.DatabaseConnection, seed SeedFile, opts Options) error {
-	deleteSQL := sqlutil.Rebind(conn.Info().Dialect, "DELETE FROM schema_seeds WHERE seed_path = ?")
+	deleteSQL := sqlutil.Rebind(conn.Info().Dialect, "DELETE FROM "+trackerTable(conn)+" WHERE seed_path = ?")
 	if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, seed.Path); err != nil {
 		return err
 	}
 
-	insertSQL := sqlutil.Rebind(conn.Info().Dialect, "INSERT INTO schema_seeds (seed_path, env, checksum, applied_at) VALUES (?, ?, ?, ?)")
+	insertSQL := sqlutil.Rebind(conn.Info().Dialect,
+		"INSERT INTO "+trackerTable(conn)+" ("+strings.Join(ledgerColumns, ", ")+") VALUES (?, ?, ?, ?)")
 	return conn.Writer().ExecuteSQL(ctx, insertSQL, seed.Path, opts.Env, seed.Checksum, time.Now())
 }
 

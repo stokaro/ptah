@@ -89,6 +89,14 @@ Such a user keeps no schema apply log either: `ptah schema apply` warns for each
 entry it cannot write, and applies the plan. Add `schema=app` to the URL to keep
 the log in the user's schema.
 
+`ptah seed` keeps its ledger, `schema_seeds`, in the same schema, so a seed
+applied as `sa` is skipped for an account whose default schema is `app`. A run
+that names no schema refuses to start when `dbo` holds no ledger and the default
+schema of the connection's user holds one with the ledger's columns: add
+`schema=app` to the URL to keep the ledger where it is, move the table into
+`dbo`, or add `schema=dbo` to start a new ledger in `dbo`. A user who cannot
+create the table in `dbo` is told to add `schema=app`.
+
 ## Supported surface
 
 - T-SQL rendering with bracket-quoted identifiers and schema-qualified names

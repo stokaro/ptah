@@ -130,7 +130,7 @@ func oracle() descriptor.Dialect {
 		// SAVEPOINT answers ORA-00900 (stokaro/ptah#3330).
 		Seeds: descriptor.Seeds{
 			Tracker: `BEGIN
-    EXECUTE IMMEDIATE 'CREATE TABLE schema_seeds (
+    EXECUTE IMMEDIATE 'CREATE TABLE ` + descriptor.TrackerTableText + ` (
         seed_path VARCHAR(512) PRIMARY KEY,
         env VARCHAR(128) NOT NULL,
         checksum CHAR(64) NOT NULL,

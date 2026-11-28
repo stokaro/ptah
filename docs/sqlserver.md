@@ -32,6 +32,11 @@ the user's default schema holds one, since reading the empty `dbo` would apply
 every migration again (`refuseStrandedConnectionHistory` in
 `migration/migrator`).
 
+The seed ledger `schema_seeds` follows the same schema, with the same refusal
+and the same column check (`trackerTable` and `refuseStrandedLedger` in
+`migration/seeder`). The dialect's tracker statement names the table through
+the `descriptor.TrackerTable` placeholders.
+
 The parameter does not move where the server creates a name written without a
 schema, which stays the user's default schema. Where the two differ, a
 comparison refuses a desired schema that writes a table, a view, a routine or

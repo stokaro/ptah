@@ -124,7 +124,10 @@ get, so each has its own:
 
 - On SQL Server the statement is guarded with `IF OBJECT_ID(...) IS NULL`, and
   `applied_at` is `DATETIME2`. In T-SQL, `TIMESTAMP` is a row version the
-  server fills in, not a point in time.
+  server fills in, not a point in time. The table sits beside the migration
+  history, in the schema the URL's `schema` parameter names or else in `dbo`,
+  so every account that seeds one database reads one ledger; see
+  [SQL Server](../../databases/sqlserver/).
 - On Oracle the table is created from a PL/SQL block that ignores `ORA-00955`
   (name already used). The same block runs on Oracle 21, which has no
   `IF NOT EXISTS`, and on Oracle 23.

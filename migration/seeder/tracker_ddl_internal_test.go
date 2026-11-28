@@ -21,7 +21,7 @@ import (
 func TestTrackerDDL_SQLServerGuardsWithObjectIDAndStoresDatetime2(t *testing.T) {
 	c := qt.New(t)
 
-	ddl := trackerDDL(platform.SQLServer)
+	ddl := trackerDDL(platform.SQLServer, "schema_seeds")
 
 	c.Assert(ddl, qt.Not(qt.Contains), "IF NOT EXISTS")
 	c.Assert(ddl, qt.Not(qt.Contains), "TIMESTAMP")
@@ -43,7 +43,7 @@ END`)
 func TestTrackerDDL_OracleCreatesFromAPLSQLBlock(t *testing.T) {
 	c := qt.New(t)
 
-	ddl := trackerDDL(platform.Oracle)
+	ddl := trackerDDL(platform.Oracle, "schema_seeds")
 
 	c.Assert(ddl, qt.Not(qt.Contains), "IF NOT EXISTS")
 	c.Assert(ddl, qt.Equals, `BEGIN
@@ -75,7 +75,7 @@ func TestTrackerDDL_PortableDialectsKeepTheIfNotExistsGuard(t *testing.T) {
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(trackerDDL(dialect), qt.Equals, `CREATE TABLE IF NOT EXISTS schema_seeds (
+			c.Assert(trackerDDL(dialect, "schema_seeds"), qt.Equals, `CREATE TABLE IF NOT EXISTS schema_seeds (
     seed_path VARCHAR(512) PRIMARY KEY,
     env VARCHAR(128) NOT NULL,
     checksum CHAR(64) NOT NULL,
@@ -83,6 +83,25 @@ func TestTrackerDDL_PortableDialectsKeepTheIfNotExistsGuard(t *testing.T) {
 )`)
 		})
 	}
+}
+
+// TestTrackerDDL_SQLServerNamesTheQualifiedTable puts a qualified name in both
+// places the SQL Server statement names the table: the identifier, and the
+// string OBJECT_ID reads, where a single quote in the name is doubled.
+func TestTrackerDDL_SQLServerNamesTheQualifiedTable(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := trackerDDL(platform.SQLServer, "[o'k].[schema_seeds]")
+
+	c.Assert(ddl, qt.Equals, `IF OBJECT_ID(N'[o''k].[schema_seeds]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [o'k].[schema_seeds] (
+        seed_path VARCHAR(512) PRIMARY KEY,
+        env VARCHAR(128) NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        applied_at DATETIME2 NOT NULL
+    )
+END`)
 }
 
 // TestSavepointStatements_SpellsWhatEachEngineTakes pins the statements that

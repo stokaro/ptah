@@ -5532,7 +5532,10 @@ in place of a dialect's name:
   the bodies that hold statements of their own (`Bodies`).
 - `Literals`: how `migration/datadiff` writes a value as a literal.
 - `ManagedData`: how managed rows are compared and changed.
-- `Seeds`: how `migration/seeder` runs seed files and records them.
+- `Seeds`: how `migration/seeder` runs seed files and records them. Its
+  tracker statement names the table through the `TrackerTable` and
+  `TrackerTableText` placeholders, which the seeder fills with the qualified
+  name where the connection keeps Ptah's tables in a schema of their own.
 - `DevRealm`: how Ptah names, locks, isolates and resets a dev database on
   the engine, and `SchemaIsDatabase`: whether a schema is the database the
   connection selected.

@@ -104,7 +104,7 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 func TestDescriptors_TrackerStatements(t *testing.T) {
 	want := map[string]string{
 		platform.ClickHouse: "ENGINE = MergeTree ORDER BY seed_path",
-		platform.SQLServer:  "IF OBJECT_ID(N'schema_seeds', N'U') IS NULL",
+		platform.SQLServer:  "IF OBJECT_ID(N'{{table_text}}', N'U') IS NULL",
 		platform.Oracle:     "IF SQLCODE != -955 THEN",
 	}
 	for _, dialect := range builtindialects.Descriptors() {
