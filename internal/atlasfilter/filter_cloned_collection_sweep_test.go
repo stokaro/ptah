@@ -197,6 +197,15 @@ func clonedCollectionRows() []clonedCollectionRow {
 		},
 		{
 			// Not filtered, as the roles out of scope are not: the read did not
+			// cover these schemas, so they are outside the description. They
+			// are still ASKED.
+			field: "SchemasOutOfScope", present: "ops", absent: "nosuch_schema_out_of_scope",
+			seed: func(s *catalog.Database) {
+				s.SchemasOutOfScope = append(s.SchemasOutOfScope, "ops")
+			},
+		},
+		{
+			// Not filtered, as the roles out of scope are not: the read did not
 			// read these principals, so they are outside the description, and
 			// a role holding one is skipped by the reach rules whatever a
 			// filter keeps. They are still ASKED.

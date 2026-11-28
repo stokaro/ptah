@@ -53,6 +53,20 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	c.Assert(got.RolesOutOfScopeReason, qt.Equals, "another tenant owns them")
 }
 
+// TestExcludeDatabase_KeepsWhichSchemasTheReadLeftOut keeps the schemas a
+// one-schema read did not cover, which a diff reads to say whether it left a
+// schema out.
+func TestExcludeDatabase_KeepsWhichSchemasTheReadLeftOut(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.SchemasOutOfScope = []string{"ops", "sales"}
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.SchemasOutOfScope, qt.DeepEquals, []string{"ops", "sales"})
+}
+
 // TestExcludeDatabase_KeepsAPartialWideGrantRead keeps the mark of a
 // read refused some of the grants wider than a table. Dropped, the filtered
 // description says it knows every such grant, and a revoke on a table the plan

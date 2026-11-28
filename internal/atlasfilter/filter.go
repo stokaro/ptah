@@ -233,6 +233,7 @@ func (s *exclusionState) exclude(schema *catalog.Database, target databaseTarget
 	filtered.UnmodeledObjects = s.filterUnmodeledObjects(filtered.UnmodeledObjects)
 	s.noteRemovalBlockers(filtered.RemovalBlockers)
 	s.noteRolesOutOfScope(filtered.RolesOutOfScope)
+	s.noteSchemasOutOfScope(filtered.SchemasOutOfScope)
 	s.noteUnreadRoles(filtered.UnreadRoles)
 	s.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
@@ -1266,6 +1267,16 @@ func (s *exclusionState) filterSequences(sequences []catalog.Sequence) []catalog
 func (s *exclusionState) noteRolesOutOfScope(roles []catalog.Role) {
 	for _, role := range roles {
 		s.matches("role", role.Name)
+	}
+}
+
+// noteSchemasOutOfScope asks the patterns about the schemas the database holds
+// beyond the ones the read covers. They are cloned but never filtered, for the
+// reason [noteRolesOutOfScope] gives: they are not part of the description, so
+// a selector that names one names a schema that is already out.
+func (s *exclusionState) noteSchemasOutOfScope(schemas []string) {
+	for _, name := range schemas {
+		s.matches("schema", schemaNameCandidates(name)...)
 	}
 }
 
@@ -2484,6 +2495,10 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// absent. See stokaro/ptah#1267.
 		RolesOutOfScope:       slices.Clone(schema.RolesOutOfScope),
 		RolesOutOfScopeReason: schema.RolesOutOfScopeReason,
+		// Which schemas the read left out is a fact about the database too:
+		// dropped, a one-schema diff with an exclusion would say nothing about
+		// the schemas it did not read.
+		SchemasOutOfScope: slices.Clone(schema.SchemasOutOfScope),
 		// What PUBLIC names, and which principals the read did not read, are
 		// facts about the server. Dropping them would read a MySQL role named
 		// PUBLIC as every account, and measure the reach of a role that holds
