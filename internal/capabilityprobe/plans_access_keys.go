@@ -33,8 +33,8 @@ func withAccessKeys(p plan) plan {
 		"which is YDB's; a role that cannot log in is this engine's group, and no statement here could make one " +
 		"Ptah would plan differently"
 	p.undecided[capability.DatabaseGrants] = "the key names whether Ptah's planner plans a privilege on the " +
-		"database itself, which no built-in planner does; this server accepting such a grant says nothing about " +
-		"what this dialect's planner plans"
+		"database itself, which the MySQL family's planner does as ON *; this server accepting such a grant says " +
+		"nothing about what this dialect's planner plans"
 	p.undecided[capability.RelativeGrantPaths] = "the key names how a YDB line resolves the path a GRANT names " +
 		"against the database root; this engine names a grant's object by schema and name, not by a path"
 	return p

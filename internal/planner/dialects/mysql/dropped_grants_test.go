@@ -21,17 +21,23 @@ import (
 // droppedWithGrants is a diff that drops the table t1 and the procedure rt
 // while reader holds privileges on both, and on the table t3 the schema keeps.
 func droppedWithGrants() *difftypes.SchemaDiff {
+	return droppedWithRoutineGrants("TABLE", "DEBUG", "EXECUTE")
+}
+
+// droppedWithRoutineGrants is [droppedWithGrants] with reader's privileges on
+// rt named as objectType names them: as a table on Oracle and SQL Server, and
+// as a procedure on MySQL, which grants EXECUTE on a table nowhere.
+func droppedWithRoutineGrants(objectType string, privileges ...string) *difftypes.SchemaDiff {
+	removed := []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"}}
+	for _, privilege := range privileges {
+		removed = append(removed, difftypes.GrantRef{Role: "reader", Privilege: privilege, ObjectType: objectType, ObjectName: "rt"})
+	}
 	return &difftypes.SchemaDiff{
 		TablesRemoved: difftypes.TableRemovals{{Name: "t1"}},
 		ProceduresRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{
 			Name: "rt", Kind: schemamodel.FunctionKindProcedure, Language: "plsql", Body: "BEGIN NULL; END;",
 		}}},
-		GrantsRemoved: []difftypes.GrantRef{
-			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"},
-			{Role: "reader", Privilege: "DEBUG", ObjectType: "TABLE", ObjectName: "rt"},
-			{Role: "reader", Privilege: "EXECUTE", ObjectType: "TABLE", ObjectName: "rt"},
-			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"},
-		},
+		GrantsRemoved: append(removed, difftypes.GrantRef{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"}),
 	}
 }
 
@@ -115,14 +121,16 @@ func TestPlan_OracleRevokesADeclaredPrivilegeOnARoutineItReplaces(t *testing.T) 
 func TestPlan_RevokesFirstStillRevokeOnWhatTheyDrop(t *testing.T) {
 	tests := []struct {
 		dialect string
+		diff    *difftypes.SchemaDiff
 		want    []string
 	}{
 		{
 			dialect: "mysql",
+			diff:    droppedWithRoutineGrants("PROCEDURE", "ALTER ROUTINE", "EXECUTE"),
 			want: []string{
 				"REVOKE SELECT ON `t1` FROM `reader`",
-				"REVOKE DEBUG ON `rt` FROM `reader`",
-				"REVOKE EXECUTE ON `rt` FROM `reader`",
+				"REVOKE ALTER ROUTINE ON PROCEDURE `rt` FROM `reader`",
+				"REVOKE EXECUTE ON PROCEDURE `rt` FROM `reader`",
 				"REVOKE SELECT ON `t3` FROM `reader`",
 				"-- WARNING: Ensure no other objects depend on this procedure\nDROP PROCEDURE IF EXISTS `rt`",
 				"-- WARNING: This will delete all data!\nDROP TABLE IF EXISTS `t1`",
@@ -130,6 +138,7 @@ func TestPlan_RevokesFirstStillRevokeOnWhatTheyDrop(t *testing.T) {
 		},
 		{
 			dialect: "sqlserver",
+			diff:    droppedWithGrants(),
 			want: []string{
 				"REVOKE SELECT ON [t1] FROM [reader]",
 				"REVOKE DEBUG ON [rt] FROM [reader]",
@@ -145,7 +154,7 @@ func TestPlan_RevokesFirstStillRevokeOnWhatTheyDrop(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				context.Background(), must.Must(builtin.New()), droppedWithGrants(), test.dialect,
+				context.Background(), must.Must(builtin.New()), test.diff, test.dialect,
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -178,10 +187,11 @@ func heldOnAReplacedRoutine(language, removed string, auditorOption bool) *difft
 // A routine the plan replaces with DROP and CREATE holds nothing once both
 // ran, measured on SQL Server 2025. The plan grants again,
 // after the CREATE, every privilege the read reported on it except the one it
-// revokes, a privilege of a role the schema does not manage included. MySQL
-// reads report no privilege on a routine, and a table privilege of the same
-// name is the table's, so the MySQL plan gives back nothing. Oracle replaces
-// the routine without a DROP and needs only the explicitly requested REVOKE.
+// revokes, a privilege of a role the schema does not manage included. A MySQL
+// plan gives back what the read of mysql.procs_priv reports, which this diff
+// carries none of, and a table privilege of the same name is the table's, so
+// the MySQL plan gives back nothing. Oracle replaces the routine without a
+// DROP and needs only the explicitly requested REVOKE.
 func TestPlan_GivesBackWhatARoleHeldOnAReplacedRoutine(t *testing.T) {
 	tests := []struct {
 		dialect       string

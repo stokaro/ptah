@@ -34,8 +34,16 @@ func TestParserGrantPrivilegeWords_HappyPath(t *testing.T) {
 			privileges: []string{"CREATE", "CREATE VIEW", "CREATE ROUTINE"}, objectType: "SCHEMA", objectName: "`d`",
 		},
 		{
-			name: "MySQL ALTER ROUTINE on a routine", dialect: platform.MySQL, sql: "GRANT ALTER ROUTINE, EXECUTE ON PROCEDURE `d`.`p1`() TO r;",
+			name: "MySQL ALTER ROUTINE on a routine", dialect: platform.MySQL, sql: "GRANT ALTER ROUTINE, EXECUTE ON PROCEDURE `d`.`p1` TO r;",
 			privileges: []string{"ALTER ROUTINE", "EXECUTE"}, objectType: "PROCEDURE", objectName: "`d`.`p1`",
+		},
+		{
+			name: "MySQL EXECUTE on a function by its name alone", dialect: platform.MySQL, sql: "GRANT EXECUTE ON FUNCTION f1 TO r;",
+			privileges: []string{"EXECUTE"}, objectType: "FUNCTION", objectName: "f1",
+		},
+		{
+			name: "MySQL privileges on the database the session selects", dialect: platform.MySQL, sql: "GRANT INSERT, EXECUTE ON * TO r;",
+			privileges: []string{"INSERT", "EXECUTE"}, objectType: "DATABASE", objectName: "",
 		},
 		{
 			name: "MySQL words in lower case across lines", dialect: platform.MySQL, sql: "grant show\n  view on t1 to r;",
@@ -93,6 +101,10 @@ func TestParserRevokePrivilegeWords_HappyPath(t *testing.T) {
 		{
 			name: "MySQL on a database", dialect: platform.MySQL, sql: "REVOKE LOCK TABLES ON `d` . * FROM r;",
 			privileges: []string{"LOCK TABLES"}, objectType: "SCHEMA", objectName: "`d`",
+		},
+		{
+			name: "MariaDB on the database the session selects", dialect: platform.MariaDB, sql: "REVOKE EXECUTE ON  *  FROM r;",
+			privileges: []string{"EXECUTE"}, objectType: "DATABASE", objectName: "",
 		},
 		{
 			name: "SQL Server", dialect: platform.SQLServer, sql: "REVOKE VIEW DEFINITION ON SCHEMA::[dbo] FROM [r];",
@@ -187,6 +199,22 @@ func TestParserGrantPrivilegeWords_FailurePath(t *testing.T) {
 		{
 			name: "a database wildcard on PostgreSQL", dialect: platform.Postgres, sql: "GRANT SELECT ON d.* TO r;",
 			wantErr: `line 1, column 19: expected identifier after '.' in GRANT object name: .*`,
+		},
+		{
+			name: "the selected database on PostgreSQL", dialect: platform.Postgres, sql: "GRANT SELECT ON * TO r;",
+			wantErr: `line 1, column 17: expected GRANT object name: .*`,
+		},
+		{
+			name: "an argument list on a MySQL routine", dialect: platform.MySQL, sql: "GRANT EXECUTE ON FUNCTION f1() TO r;",
+			wantErr: `line 1, column 29: GRANT \.\.\. ON FUNCTION f1\(\.\.\.\): mysql names a routine by its name alone: leave out the argument list`,
+		},
+		{
+			name: "an argument list on a MariaDB routine in a REVOKE", dialect: platform.MariaDB, sql: "REVOKE EXECUTE ON PROCEDURE `d`.`p1` (int) FROM r;",
+			wantErr: "line 1, column 38: REVOKE \\.\\.\\. ON PROCEDURE `d`.`p1`\\(\\.\\.\\.\\): mariadb names a routine by its name alone: leave out the argument list",
+		},
+		{
+			name: "ROUTINE on MariaDB", dialect: platform.MariaDB, sql: "GRANT EXECUTE ON ROUTINE f1 TO r;",
+			wantErr: `line 1, column 26: GRANT \.\.\. ON ROUTINE: mariadb names a routine as FUNCTION or PROCEDURE: write ON FUNCTION or ON PROCEDURE`,
 		},
 		{
 			name: "every database on MySQL", dialect: platform.MySQL, sql: "GRANT SELECT ON *.* TO r;",

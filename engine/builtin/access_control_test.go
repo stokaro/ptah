@@ -50,7 +50,7 @@ func TestRenderSQL_AccessNodes_FailurePath(t *testing.T) {
 			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, new(false), nil), wantKey: capability.RoleMembershipInheritSet},
 		{name: "a set option before PostgreSQL 16", dialect: platform.Postgres, caps: capability.Postgres14(),
 			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, nil, new(true)), wantKey: capability.RoleMembershipInheritSet},
-		{name: "a grant on the database on MySQL", dialect: platform.MySQL, caps: capability.MySQL84(),
+		{name: "a grant on the database on SQL Server", dialect: platform.SQLServer, caps: capability.SQLServer2022(),
 			node: ast.NewGrantPrivilege("app", "DATABASE", "", []string{"SELECT"}), wantKey: capability.DatabaseGrants},
 		{name: "a revoke on the database on PostgreSQL", dialect: platform.Postgres, caps: capability.Postgres18(),
 			node: ast.NewRevokePrivilege("app", "database", "app", []string{"CONNECT"}), wantKey: capability.DatabaseGrants},

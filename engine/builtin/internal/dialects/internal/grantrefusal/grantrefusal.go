@@ -1,7 +1,8 @@
 // Package grantrefusal holds the refusals the MySQL-family, SQL Server, Oracle
 // and ClickHouse renderers make for a GRANT or REVOKE whose target they cannot
-// spell: a function or procedure, which only the PostgreSQL renderer spells,
-// and columns of a table, which the Oracle and ClickHouse renderers do not.
+// spell: a function or procedure, which only the PostgreSQL and MySQL-family
+// renderers spell, and columns of a table, which the Oracle and ClickHouse
+// renderers do not.
 //
 // The SQL schema reader parses `GRANT EXECUTE ON FUNCTION f(uuid) TO r` and
 // `GRANT UPDATE (a) ON t TO r` for any dialect, and a plan carries the target
@@ -20,14 +21,14 @@ import (
 	"ptah.run/core/ptaherr"
 )
 
-// Routine reports a routine target a renderer other than PostgreSQL's cannot
-// spell, wrapping [ptaherr.ErrUnsupportedFeature], or nil when the target is not
-// a routine.
+// Routine reports a routine target a renderer other than PostgreSQL's and the
+// MySQL family's cannot spell, wrapping [ptaherr.ErrUnsupportedFeature], or nil
+// when the target is not a routine.
 func Routine(dialect, statement, objectType, objectName string) error {
 	switch kind := strings.ToUpper(strings.TrimSpace(objectType)); kind {
 	case "FUNCTION", "PROCEDURE", "ROUTINE":
 		return fmt.Errorf(
-			"%w: %s ON %s %s: privileges on routines are modeled for PostgreSQL only, not %s",
+			"%w: %s ON %s %s: privileges on routines are modeled for PostgreSQL, MySQL and MariaDB only, not %s",
 			ptaherr.ErrUnsupportedFeature, statement, kind, objectName, dialect)
 	default:
 		return nil

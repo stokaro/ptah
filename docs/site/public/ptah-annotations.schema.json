@@ -1324,7 +1324,7 @@
               "type": "string"
             },
             "on_database": {
-              "description": "Targets the database itself. YDB only.",
+              "description": "Targets the database itself: on MySQL and MariaDB the database the session selects, as GRANT ... ON * names it. YDB, MySQL and MariaDB.",
               "enum": [
                 "true",
                 "false"
@@ -1341,11 +1341,11 @@
               "type": "string"
             },
             "on_function": {
-              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in purge().",
               "type": "string"
             },
             "on_procedure": {
-              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in archive().",
               "type": "string"
             },
             "on_resource_pool": {
@@ -2007,7 +2007,7 @@
               "type": "string"
             },
             "on_database": {
-              "description": "Targets the database itself. YDB only.",
+              "description": "Targets the database itself: on MySQL and MariaDB the database the session selects, as GRANT ... ON * names it. YDB, MySQL and MariaDB.",
               "enum": [
                 "true",
                 "false"
@@ -2024,11 +2024,11 @@
               "type": "string"
             },
             "on_function": {
-              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
+              "description": "Target function with its argument types, such as purge(uuid). PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in purge().",
               "type": "string"
             },
             "on_procedure": {
-              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
+              "description": "Target procedure with its argument types, such as archive(uuid). PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in archive().",
               "type": "string"
             },
             "on_resource_pool": {

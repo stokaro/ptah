@@ -374,17 +374,20 @@ func mariaDBCharsetDefaults() map[string]string {
 	}
 }
 
-// mariaDBAllPrivileges is what GRANT ALL grants on a MariaDB table and
-// database: MySQL's lists and DELETE HISTORY, measured on MariaDB 10.11.19,
-// 11.4.13, 11.8.9 and 12.3.3. A database grant gains SHOW CREATE ROUTINE on
-// 11.4 and later, and 10.11 has none.
+// mariaDBAllPrivileges is what GRANT ALL grants on a MariaDB table,
+// database and routine: MySQL's lists and DELETE HISTORY, measured on MariaDB
+// 10.11.19, 11.4.13, 11.8.9 and 12.3.3. A database grant gains SHOW CREATE
+// ROUTINE on 11.4 and later, and 10.11 has none. A routine takes MySQL's list.
 func mariaDBAllPrivileges() descriptor.AllPrivileges {
 	mysql := mysqlAllPrivileges()
+	database := descriptor.AllPrivilegeList{
+		Privileges: append(mysql.Kinds["SCHEMA"].Privileges, "DELETE HISTORY", "SHOW CREATE ROUTINE"),
+		Optional:   []string{"SHOW CREATE ROUTINE"},
+	}
 	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
-		"TABLE": {Privileges: append(mysql.Kinds["TABLE"].Privileges, "DELETE HISTORY")},
-		"SCHEMA": {
-			Privileges: append(mysql.Kinds["SCHEMA"].Privileges, "DELETE HISTORY", "SHOW CREATE ROUTINE"),
-			Optional:   []string{"SHOW CREATE ROUTINE"},
-		},
+		"TABLE":    {Privileges: append(mysql.Kinds["TABLE"].Privileges, "DELETE HISTORY")},
+		"SCHEMA":   database,
+		"DATABASE": {Privileges: append([]string(nil), database.Privileges...), Optional: append([]string(nil), database.Optional...)},
+		"FUNCTION": mysql.Kinds["FUNCTION"], "PROCEDURE": mysql.Kinds["PROCEDURE"],
 	}}
 }

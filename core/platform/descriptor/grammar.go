@@ -499,6 +499,13 @@ type StatementGrammar struct {
 	// database as `db.*`, as MySQL does, which grants on the database: the
 	// target is read as the object kind SCHEMA named db.
 	DatabaseWildcards bool `json:"database_wildcards,omitempty"`
+	// RoutineGrantsByName reports that GRANT and REVOKE name a function or a
+	// procedure after FUNCTION or PROCEDURE by its name alone, as MySQL does:
+	// the server holds one routine of each kind under a name, and an argument
+	// list or the word ROUTINE there is a syntax error. Without it a routine
+	// target needs its argument types, as PostgreSQL resolves an overload by
+	// them.
+	RoutineGrantsByName bool `json:"routine_grants_by_name,omitempty"`
 }
 
 // StatementForms states the statements the parser reads as the engine writes them,

@@ -1675,6 +1675,16 @@ read` writes for them reads back, and a plan against the database it came from
 is empty. A global grant, `ON *.*`, is refused in a schema file, which
 describes one database. Measured on MySQL 8.4.13 and MariaDB 11.8.
 
+A grant on the database itself, `GRANT INSERT ON * TO r`, names the database
+the session selected, whatever its name, and the server answers it with ERROR
+1046 where none is selected. The read reports it as a grant on that database by
+name, so a schema that declares `ON *`, or `on_database` in an annotation, is
+synced with a database holding ``GRANT INSERT ON `app`.* `` when the connection
+selected `app`. A migration planned against a dev database, and a checkpoint,
+write such a grant as `ON *`, and a grant on a table or a routine of the
+database by its name alone, so the file grants on the database it is applied
+to. Measured on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3.
+
 A grant may name columns of a table or a view, as in
 ``GRANT SELECT (id, name) ON t1 TO `reader` ``. The server holds it as a
 privilege on each column and on nothing else: the role cannot read a column the
@@ -1887,9 +1897,26 @@ anything runs:
 A revoke of another privilege on the column, and two revokes, are accepted
 under any spelling, because a revoke takes the privilege under every spelling.
 
-A privilege on a function or procedure is refused by name when a plan grants
-it, and the comparison does not read routine privileges, so it cannot see an
-`EXECUTE` granted or revoked outside the schema.
+A privilege on a function or procedure names the routine by its kind and its
+name alone: ``GRANT EXECUTE ON FUNCTION `f1` TO `r` `` or
+``GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `p1` TO `r` ``. The read takes a
+role's grants on the routines of the database from `mysql.procs_priv`, on the
+routine as the database spells it, since a routine name compares without case,
+and the comparison grants and revokes them as it does a table's. `ALL` on a
+routine is `EXECUTE` and `ALTER ROUTINE`. A function and a procedure of one name
+are two routines, and a grant on one is not a grant on the other. These are
+refused before anything runs, each with the spelling to use:
+
+- `ON ROUTINE`, and an argument list after the routine's name, which the server
+  answers with a syntax error;
+- a privilege other than `EXECUTE` and `ALTER ROUTINE` on a routine, which MySQL
+  answers with ERROR 1144. MariaDB accepts `SHOW CREATE ROUTINE` there and does
+  not record it in `mysql.procs_priv`, so a read could not see it;
+- `EXECUTE` or `ALTER ROUTINE` on a target named without `FUNCTION` or
+  `PROCEDURE`, as in `GRANT EXECUTE ON rt TO r`: the server reads such a target
+  as a table and answers with ERROR 1144 after the statements before it ran.
+
+Measured on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3.
 
 A routine whose body changes is replaced with `DROP` and `CREATE`. Under the
 default `automatic_sp_privileges=1` the `DROP` deletes every privilege on the
@@ -1898,7 +1925,9 @@ takes the rows of `mysql.procs_priv` for the routines of the databases it
 describes, and a plan that replaces a routine grants each of them again after
 the `CREATE`: to a user with its host, to a role, and with the grant option
 where it was held. The `GRANT` names the routine as the `CREATE` does, with
-its database only where the schema names one.
+its database only where the schema names one. A privilege or a grant option the
+same plan revokes from a role is not granted again: the revokes run before the
+`DROP`, and granting it after the `CREATE` would undo them.
 
 Two rows are not granted again. The `CREATE` gives its account `EXECUTE` and
 `ALTER ROUTINE` on the routine when the account cannot already run and change

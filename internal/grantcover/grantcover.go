@@ -115,6 +115,7 @@ func Find(
 	}
 	all := target.AllPrivileges
 	spelled := table
+	desired, current = onSessionDatabase(desired, current)
 	desired, role, table = storedNames(desired, target.Semantics), target.Semantics.StoredName(role), storedTable(table, target.Semantics)
 	privileges = onTable(privileges, all.All("TABLE"))
 	holding := holders(current, role, target.Memberships)
@@ -166,6 +167,50 @@ func storedNames(desired *schemamodel.Database, semantics identifier.Semantics) 
 		}
 	}
 	return stored
+}
+
+// onSessionDatabase returns desired and current with each grant on the
+// database itself named as a grant on the database current describes
+// ([catalog.Database.CurrentDatabase]). The MySQL family grants on the
+// database the session selected with `GRANT ... ON *`, which is the grant
+// `GRANT ... ON db.*` makes, and it keeps the privilege on every table there
+// as that one does. A read that names no database is returned with desired as
+// they are. Neither argument is changed.
+func onSessionDatabase(desired *schemamodel.Database, current *catalog.Database) (*schemamodel.Database, *catalog.Database) {
+	name := current.CurrentDatabase
+	if name == "" {
+		return desired, current
+	}
+	if slices.ContainsFunc(current.Grants, func(grant catalog.Grant) bool { return isDatabase(grant.ObjectType) }) {
+		named := *current
+		named.Grants = slices.Clone(current.Grants)
+		for i, grant := range named.Grants {
+			if isDatabase(grant.ObjectType) {
+				named.Grants[i].ObjectType, named.Grants[i].ObjectName = "SCHEMA", name
+			}
+		}
+		current = &named
+	}
+	onDatabase := func(grant schemamodel.Grant) bool { return grant.OnDatabase }
+	if desired == nil ||
+		(!slices.ContainsFunc(desired.Grants, onDatabase) && !slices.ContainsFunc(desired.RevokedGrants, onDatabase)) {
+		return desired, current
+	}
+	named := *desired
+	named.Grants, named.RevokedGrants = slices.Clone(desired.Grants), slices.Clone(desired.RevokedGrants)
+	for _, grants := range [][]schemamodel.Grant{named.Grants, named.RevokedGrants} {
+		for i := range grants {
+			if grants[i].OnDatabase {
+				grants[i].OnDatabase, grants[i].OnSchema = false, name
+			}
+		}
+	}
+	return &named, current
+}
+
+// isDatabase reports whether a grant's object type is the database itself.
+func isDatabase(objectType string) bool {
+	return strings.EqualFold(strings.TrimSpace(objectType), "DATABASE")
 }
 
 // storedTable is table, named as table or database.table, with each part

@@ -40,6 +40,19 @@ func TestAtlasCheckpointArtifact_LeadingBlankLinesDoNotDisplaceTheDirective(t *t
 	c.Assert(firstLine, qt.Equals, "-- atlas:checkpoint")
 }
 
+// TestAtlasCheckpointArtifact_SpellsNoTransactionAsTxModeNone pins that an up
+// body the generator marked no_transaction is written with
+// `-- atlas:txmode none` in the directive block, after the checkpoint
+// directive, and without the Ptah spelling: the migrator refuses the body in
+// transaction mode file, and an Atlas-layout file names the mode the Atlas way.
+func TestAtlasCheckpointArtifact_SpellsNoTransactionAsTxModeNone(t *testing.T) {
+	c := qt.New(t)
+
+	_, contents := generator.AtlasCheckpointArtifact(1, "x", "-- +ptah no_transaction\n-- generated\nCREATE VIEW v AS SELECT 1;\n")
+
+	c.Assert(contents, qt.Equals, "-- atlas:checkpoint\n-- atlas:txmode none\n\n-- generated\nCREATE VIEW v AS SELECT 1;\n")
+}
+
 func TestAtlasCheckpointArtifact_NamesAndDescriptions(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -35,6 +35,14 @@ type columnSequences struct {
 	declared map[tableIdentity]bool
 	// current is the target a database grant names each column's sequence by.
 	current map[tableIdentity]string
+	// session is true where the read describes the one database the session
+	// selected ([catalog.Database.CurrentDatabase]). A grant on the database
+	// itself is then a grant on that database by name, as the MySQL family
+	// reads `GRANT ... ON *`, so both keys name it as that schema.
+	session bool
+	// routineKindsApart keeps a grant on a function and a grant on a
+	// procedure of one name apart ([GrantOptions.RoutineKindsApart]).
+	routineKindsApart bool
 }
 
 func newColumnSequences(
@@ -48,6 +56,7 @@ func newColumnSequences(
 		database: make(map[tableIdentity]tableIdentity),
 		declared: make(map[tableIdentity]bool),
 		current:  make(map[tableIdentity]string),
+		session:  database.CurrentDatabase != "",
 	}
 	for _, table := range database.Tables {
 		for _, column := range table.Columns {
@@ -85,17 +94,34 @@ func (s columnSequences) desiredKey(key grantIdentity) grantIdentity {
 	if owner, ok := s.desiredOwner(key); ok {
 		key.object = owner
 	}
-	return key
+	return s.comparedKey(key)
 }
 
 // databaseKey is key for a database grant, with a column's sequence replaced
 // by the column.
 func (s columnSequences) databaseKey(key grantIdentity) grantIdentity {
+	key = s.comparedKey(key)
 	if key.objectType != grantObjectTypeSequence {
 		return key
 	}
 	if owner, ok := s.database[key.object]; ok {
 		key.object = owner
+	}
+	return key
+}
+
+// comparedKey is key as the target compares it. A grant on the database
+// itself is named as a grant on the schema the session selected, where the
+// read describes that one database: [newGrantIdentity] keys a grant on the
+// database by the default schema, which is that database, so only the kind
+// differs from the key of `GRANT ... ON db.*`. A grant on a routine keeps its
+// kind only where a function and a procedure of one name are two routines.
+func (s columnSequences) comparedKey(key grantIdentity) grantIdentity {
+	if s.session && key.objectType == grantObjectTypeDatabase {
+		key.objectType = grantObjectTypeSchema
+	}
+	if !s.routineKindsApart {
+		key.routineKind = ""
 	}
 	return key
 }

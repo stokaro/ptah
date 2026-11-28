@@ -111,7 +111,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
 	database.RevokedGrants = append(
-		revokedPublicExecute(dbSchema.Grants),
+		revokedPublicExecute(dbSchema.Grants, dialect),
 		revokedOwnerPrivileges(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))...,
 	)
 	database.DeniedGrants = convertDeniedGrants(dbSchema.Grants)
@@ -1267,7 +1267,8 @@ func revokedOwnerPrivileges(dbGrants []catalog.Grant, replayed map[string]string
 var routineGrantObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true}
 
 // revokedPublicExecute describes the routines whose PUBLIC EXECUTE a catalog
-// read shows was revoked.
+// read shows was revoked, on a dialect whose descriptor states
+// Conversion.ImplicitRoutineGrants.
 //
 // PostgreSQL gives PUBLIC EXECUTE on a routine when it is created, and the read
 // reports that as an Implicit row until the routine's ACL is first written. A
@@ -1275,7 +1276,15 @@ var routineGrantObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": tru
 // a description that said nothing about it would recreate the routine with the
 // privilege back. So each such routine gets a revoked grant. A routine with no
 // row at all is outside the read and is left alone.
-func revokedPublicExecute(dbGrants []catalog.Grant) []schemamodel.Grant {
+//
+// MySQL and MariaDB give PUBLIC nothing on a routine, and a role's grant on
+// one is no sign of a revoke: without the gate, a checkpoint of a history that
+// grants EXECUTE on f1 writes `REVOKE EXECUTE ON FUNCTION f1 FROM PUBLIC`,
+// which MySQL answers with ERROR 1403.
+func revokedPublicExecute(dbGrants []catalog.Grant, dialect string) []schemamodel.Grant {
+	if described, _ := platform.Lookup(dialect); !described.Conversion.ImplicitRoutineGrants {
+		return nil
+	}
 	type routine struct{ kind, target, arguments string }
 	held := make(map[routine]bool)
 	var order []routine

@@ -324,6 +324,12 @@ func WriteAtlasCheckpointFileWithOptions(
 // falls back to "checkpoint" rather than to the bare <version>.sql that
 // `migrate new` uses. The contents are the measured Atlas layout: the
 // directive on the first line, a blank separator line, then the SQL.
+//
+// An up body that begins with `-- +ptah no_transaction`, as
+// [GenerateCheckpointFromShadow] marks one the migrator would refuse in
+// transaction mode file, is written with `-- atlas:txmode none` on the line
+// after the checkpoint directive instead: the same mode, spelled the way this
+// layout spells it.
 func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string) {
 	stem := atlasCheckpointNameStem(description)
 	if stem == "" {
@@ -331,11 +337,16 @@ func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, co
 	}
 	name = fmt.Sprintf("%d_%s.sql", version, stem)
 
+	header := atlasCheckpointDirective
 	body := strings.Trim(upSQL, "\n")
-	if body == "" {
-		return name, atlasCheckpointDirective + "\n"
+	if unmarked, marked := strings.CutPrefix(body, noTransactionDirectiveLine+"\n"); marked {
+		header += "\n" + atlasmigrate.AtlasTxModeNoneDirective
+		body = strings.Trim(unmarked, "\n")
 	}
-	return name, atlasCheckpointDirective + "\n\n" + body + "\n"
+	if body == "" {
+		return name, header + "\n"
+	}
+	return name, header + "\n\n" + body + "\n"
 }
 
 // CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
@@ -403,6 +414,11 @@ type CheckpointFromShadowOptions struct {
 // candidate identifier set is resolved under the shadow catalog's collation
 // rather than under conservative offline rules — on SQL Server that is what
 // lets case-variant identifiers coexist in one checkpoint.
+//
+// Both bodies begin with `-- +ptah no_transaction` where the migrator would
+// refuse the up body in transaction mode file, the default of
+// `migrations up`: on MySQL and MariaDB, a body holding a view, trigger,
+// routine or event definition.
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return "", "", err
@@ -497,7 +513,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	// The grants name the shadow database, which is never the database the
 	// checkpoint is replayed into; without the rewrite a replay elsewhere
 	// grants on objects that do not exist there.
-	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, portablegrants.Unqualified(shadowSchema), shadowConn.Info().Dialect, opts.Runtime)
+	goSchema, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, portablegrants.Relative(shadowSchema), shadowConn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return "", "", fmt.Errorf("capture checkpoint schema: %w", err)
 	}
@@ -521,5 +537,30 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if bootstrap != "" {
 		upSQL = strings.TrimRight(upSQL, "\n") + "\n\n" + bootstrap
 	}
-	return upSQL, downSQL, nil
+	return markCheckpointFileMode(ctx, shadowConn, upSQL, downSQL)
+}
+
+// markCheckpointFileMode marks both bodies of a checkpoint no_transaction
+// where the migrator would refuse the up body in transaction mode file, as
+// [markFileModeRefusals] marks a generated migration. On MySQL and MariaDB
+// that mode refuses a view, trigger, routine or event definition, so without
+// the mark the checkpoint of a history holding one is refused by every
+// `migrations up` that reaches it.
+//
+// The migrator answers against conn, the shadow database holding the replayed
+// history, which is the schema the up body creates. The down body runs against
+// the database the up body left, so a refused up body marks it as well.
+func markCheckpointFileMode(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	upSQL, downSQL string,
+) (markedUp, markedDown string, err error) {
+	refused, err := fileModeRefuses(ctx, conn, upSQL)
+	if err != nil {
+		return "", "", err
+	}
+	if !refused {
+		return upSQL, downSQL, nil
+	}
+	return withNoTransactionDirective(upSQL), withNoTransactionDirective(downSQL), nil
 }

@@ -524,6 +524,12 @@ func TestValidate_FailurePath(t *testing.T) {
 				`revoke SELECT ON d2\.\* from "r2" instead, or grant the privilege on each table that needs it`,
 		},
 		{
+			name: "a grant on the database the session selected", dialect: "mysql",
+			current: selecting(catalog.Grant{Role: "r2", Privilege: "SELECT", ObjectType: "DATABASE"}),
+			want: `role "r2" holds SELECT ON d2\.\*, which covers table t3, so a revoke on the table cannot take it: ` +
+				`revoke SELECT ON d2\.\* from "r2" instead, or grant the privilege on each table that needs it`,
+		},
+		{
 			name: "a grant on every database", dialect: "mysql",
 			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ON *.*"}),
 			want: `role "r2" holds SELECT ON \*\.\*, which covers table t3, so a revoke on the table cannot take it: ` +
@@ -611,6 +617,14 @@ func TestValidate_FailurePathDeclared(t *testing.T) {
 			name: "a grant the schema declares", desired: withRevoke(declares("r2", "d2", "ALL"), "SELECT"),
 			current: readHolding(nil),
 			want: `the schema grants ALL ON d2\.\* to role "r2", which covers table t3, so a revoke on the table cannot take it: ` +
+				`grant the privilege on each table that needs it instead of on the database`,
+		},
+		{
+			name: "a grant on the database the session selects", desired: withRevoke(&schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "r2", Privileges: []string{"SELECT"}, OnDatabase: true}},
+			}, "SELECT"),
+			current: selecting(),
+			want: `the schema grants SELECT ON d2\.\* to role "r2", which covers table t3, so a revoke on the table cannot take it: ` +
 				`grant the privilege on each table that needs it instead of on the database`,
 		},
 		{

@@ -313,6 +313,11 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		return fmt.Errorf("failed to read the grant tables: %w", err)
 	}
 	grants, err := r.readGrantsIn(ctx, databases, source)
+	if err == nil {
+		var onRoutines []catalog.Grant
+		onRoutines, err = r.readRoutineGrantsIn(ctx, schema, databases, source)
+		grants = append(grants, onRoutines...)
+	}
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)

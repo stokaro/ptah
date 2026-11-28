@@ -669,6 +669,12 @@ func (p *Parser) parseGrantTarget(statement string) (grantTarget, error) {
 	if p.databaseWildcardFollows() {
 		return p.parseDatabaseWildcard(statement)
 	}
+	if p.target.grammar.Statements.DatabaseWildcards && p.current.MatchOperatorValue("*") {
+		// A bare * names the database the session selected: the database the
+		// schema is applied to, whatever its name.
+		p.advance()
+		return grantTarget{objectType: "DATABASE"}, nil
+	}
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		if grantObjectTypes[keyword] {
@@ -696,7 +702,8 @@ func (p *Parser) databaseWildcardFollows() bool {
 
 // parseDatabaseWildcard reads `db.*`, which grants on every table of the
 // database db, as a target on the database. `*.*` names every database,
-// which no schema declares, and is refused by name.
+// which no schema declares, and is refused by name. A bare `*`, which names
+// the database the session selected, is read by [Parser.parseGrantTarget].
 func (p *Parser) parseDatabaseWildcard(statement string) (grantTarget, error) {
 	if p.current.MatchOperatorValue("*") {
 		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
@@ -737,6 +744,12 @@ func (p *Parser) readGrantClassQualifier(statement, kind string) error {
 
 func (p *Parser) parseGrantObject(statement, objectType string) (grantTarget, error) {
 	target := grantTarget{objectType: objectType}
+	byName := p.dialect != "" && p.target.grammar.Statements.RoutineGrantsByName
+	if byName && objectType == "ROUTINE" {
+		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s ... ON ROUTINE: %s names a routine as FUNCTION or PROCEDURE: write ON FUNCTION or ON PROCEDURE",
+			statement, p.dialect))
+	}
 	objectName, err := p.parseQualifiedIdentifier(statement + " object name")
 	if err != nil {
 		return grantTarget{}, err
@@ -746,6 +759,14 @@ func (p *Parser) parseGrantObject(statement, objectType string) (grantTarget, er
 		return target, nil
 	}
 	p.skipWhitespace()
+	if byName {
+		if p.current.MatchOperatorValue("(") {
+			return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
+				"%s ... ON %s %s(...): %s names a routine by its name alone: leave out the argument list",
+				statement, target.objectType, objectName, p.dialect))
+		}
+		return target, nil
+	}
 	if !p.current.MatchOperatorValue("(") {
 		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
 			"%s ... ON %s %s needs the argument types, as in %s(uuid): a routine's identity "+

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -191,11 +192,12 @@ func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 // 11.8.9, and the comparison reads none of them, so without these a body
 // change leaves every grantee without EXECUTE on the routine and the next
 // plan reports the schema synced. With automatic_sp_privileges off the DROP
-// keeps the rows and the read reports none, so the plan grants nothing. Ptah
-// models no privilege on a routine on these engines, so the plan revokes none
-// and every row comes back, to a user or a role alike: a user is named with
-// its host, a MariaDB role by its name alone ([catalog.RoutineGrant.Role]).
-// The row the CREATE grants the applying account is not among them.
+// keeps the rows and the read reports none, so the plan grants nothing. Every
+// row comes back, to a user or a role alike: a user is named with its host, a
+// MariaDB role by its name alone ([catalog.RoutineGrant.Role]). The row the
+// CREATE grants the applying account is not among them, and neither is what
+// the plan revokes: the revokes run first, and a privilege given back after
+// the CREATE would undo them ([withoutRevoked]).
 //
 // The GRANTs run as the applying account, and a server refuses one from an
 // account without the grant option, with ERROR 1370 after the DROP and the
@@ -226,6 +228,10 @@ func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.
 			if !grantsOn(semantics, grant, routine, ref) {
 				continue
 			}
+			grant, kept := withoutRevoked(grant, diff)
+			if !kept {
+				continue
+			}
 			if !grant.ReaderMayGrant {
 				return nil, p.refuseUngrantableRoutinePrivilege(grant, routine)
 			}
@@ -237,6 +243,41 @@ func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.
 		}
 	}
 	return nodes, nil
+}
+
+// withoutRevoked is grant without the privileges and the grant option diff
+// revokes from its grantee on its routine, and whether anything is left to
+// give back. A revoke names a role or a login on host % by its name alone, as
+// a MariaDB role is named and as a MySQL role is the account on host %, and a
+// routine by its name, which compares without case. ALL takes every privilege.
+func withoutRevoked(grant catalog.RoutineGrant, diff *difftypes.SchemaDiff) (catalog.RoutineGrant, bool) {
+	if !grant.Role && grant.Host != "%" {
+		return grant, true
+	}
+	on := func(ref difftypes.GrantRef) bool {
+		target, parsed := tableref.Parse(ref.ObjectName)
+		if !parsed {
+			target = tableref.Ref{Name: ref.ObjectName}
+		}
+		return ref.Role == grant.User && strings.EqualFold(ref.ObjectType, grant.Type) &&
+			mysqlroutine.IdentityKey(target.Name) == mysqlroutine.IdentityKey(grant.Name)
+	}
+	revoked := make(map[string]bool)
+	for _, ref := range diff.GrantsRemoved {
+		if on(ref) {
+			revoked[strings.ToUpper(strings.TrimSpace(ref.Privilege))] = true
+		}
+	}
+	optionRevoked := slices.ContainsFunc(diff.GrantOptionsRevoked, on)
+	if len(revoked) == 0 && !optionRevoked {
+		return grant, true
+	}
+	kept := grant
+	kept.Privileges = slices.DeleteFunc(slices.Clone(grant.Privileges), func(privilege string) bool {
+		return revoked[privilege] || revoked["ALL"] || revoked["ALL PRIVILEGES"]
+	})
+	kept.WithOption = grant.WithOption && !optionRevoked
+	return kept, len(kept.Privileges) > 0 || kept.WithOption
 }
 
 // replacedRoutineList is each routine diff replaces by DROP and CREATE

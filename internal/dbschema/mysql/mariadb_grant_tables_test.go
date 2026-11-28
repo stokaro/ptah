@@ -53,6 +53,7 @@ func inheritingPrivileges(next dbtest.QueryHandler) dbtest.QueryHandler {
 			Columns: []string{"role_name", "role_host", "member_name", "member_host", "admin_option"},
 			Rows:    [][]driver.Value{{"parent", "", "member", "", int64(0)}},
 		}},
+		{marker: "FROM mysql.procs_priv", result: dbtest.QueryResult{Columns: []string{"User", "Host", "Routine_name", "Routine_type", "Proc_priv"}}},
 		{marker: "FROM mysql.user", result: dbtest.QueryResult{Columns: []string{"user"}, Rows: [][]driver.Value{{"member"}, {"parent"}}}},
 	}
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {

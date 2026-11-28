@@ -990,11 +990,11 @@ Declares database grants.
 | `grant_option` | No | Alias for `with_option`. Exactly `true` or `false`; bare form allowed. |
 | `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_database` | No | Targets the database itself. YDB only. Exactly `true` or `false`; bare form allowed. |
+| `on_database` | No | Targets the database itself: on MySQL and MariaDB the database the session selects, as `GRANT ... ON *` names it. YDB, MySQL and MariaDB. Exactly `true` or `false`; bare form allowed. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
-| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
+| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in `purge()`. |
+| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in `archive()`. |
 | `on_resource_pool` | No | Target resource pool, named by its name alone, such as `batch`: a pool belongs to the database, not to a directory. YDB only. |
 | `on_schema` | No | Target schema. |
 | `on_secret` | No | Target secret, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
@@ -1050,11 +1050,11 @@ PRIVILEGES` gives a role on a new table.
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_database` | No | Targets the database itself. YDB only. Exactly `true` or `false`; bare form allowed. |
+| `on_database` | No | Targets the database itself: on MySQL and MariaDB the database the session selects, as `GRANT ... ON *` names it. YDB, MySQL and MariaDB. Exactly `true` or `false`; bare form allowed. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
-| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL only. |
+| `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in `purge()`. |
+| `on_procedure` | No | Target procedure with its argument types, such as `archive(uuid)`. PostgreSQL, MySQL and MariaDB; MySQL and MariaDB name a routine by its name alone, so the parentheses stay empty, as in `archive()`. |
 | `on_resource_pool` | No | Target resource pool, named by its name alone, such as `batch`: a pool belongs to the database, not to a directory. YDB only. |
 | `on_schema` | No | Target schema. |
 | `on_secret` | No | Target secret, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |

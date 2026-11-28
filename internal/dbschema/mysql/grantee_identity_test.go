@@ -32,7 +32,7 @@ func TestReader_MatchesGrantsToTheCompleteAccount(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Grants, qt.HasLen, 3)
 	grants := slices.DeleteFunc(queries, func(query string) bool {
-		return !strings.Contains(query, "JOIN mysql.user AS u")
+		return !strings.Contains(query, "JOIN mysql.user AS u") || !strings.Contains(query, "FROM information_schema.")
 	})
 	c.Assert(grants, qt.HasLen, 2)
 	for _, query := range grants {

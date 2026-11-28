@@ -167,10 +167,11 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Routine(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
+	if err := r.refuseColumnPrivileges("GRANT", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
 		return err
 	}
-	if err := r.refuseColumnPrivileges("GRANT", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
+	target, err := r.grantTarget("GRANT", node.ObjectType, node.ObjectName, node.Arguments, node.Privileges)
+	if err != nil {
 		return err
 	}
 	if !r.caps.Has(capability.RoleManagement) {
@@ -178,7 +179,7 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 		return nil
 	}
 	statement := "GRANT " + privilegeList(node.Privileges, node.Columns) +
-		" ON " + grantScope(node.ObjectType, node.ObjectName) + " TO " + escapeIdentifier(node.Role)
+		" ON " + target + " TO " + escapeIdentifier(node.Role)
 	if node.WithOption {
 		statement += " WITH GRANT OPTION"
 	}
@@ -207,13 +208,14 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if err := grantrefusal.Path(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Routine(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
-		return err
-	}
 	if !node.GrantOptionFor {
 		if err := r.refuseColumnPrivileges("REVOKE", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
 			return err
 		}
+	}
+	target, err := r.grantTarget("REVOKE", node.ObjectType, node.ObjectName, node.Arguments, node.Privileges)
+	if err != nil {
+		return err
 	}
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("revoke", node.Role)
@@ -225,8 +227,7 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.GrantOptionFor {
 		revoked = "GRANT OPTION"
 	}
-	r.w.WriteLinef("REVOKE %s ON %s FROM %s;",
-		revoked, grantScope(node.ObjectType, node.ObjectName), escapeIdentifier(node.Role))
+	r.w.WriteLinef("REVOKE %s ON %s FROM %s;", revoked, target, escapeIdentifier(node.Role))
 	return nil
 }
 
@@ -295,15 +296,22 @@ func unsupportedRoleAttribute(node *ast.CreateRoleNode) string {
 	}
 }
 
-// grantScope spells the object a grant names, in the two shapes this family
-// accepts: `db`.`table` and `db`.*.
+// grantScope spells the object a grant names, in the shapes this family
+// accepts: `db`.`table`, `db`.* and *.
 //
-// Both were measured on MySQL 8.4. A grant whose object type is a schema takes
+// They were measured on MySQL 8.4. A grant whose object type is a schema takes
 // the star form, because a database IS the schema here and there is no separate
-// level to name.
+// level to name. A grant on the database itself names no database, and * is the
+// database the session selected: measured on MySQL 8.4.13 and 26.10.0 and
+// MariaDB 11.8.9 and 12.3.3, `GRANT INSERT ON * TO r` writes the row of that
+// database to mysql.db, and fails with ERROR 1046 where no database is
+// selected.
 func grantScope(objectType, objectName string) string {
-	if strings.EqualFold(strings.TrimSpace(objectType), "SCHEMA") ||
-		strings.EqualFold(strings.TrimSpace(objectType), "DATABASE") {
+	kind := strings.ToUpper(strings.TrimSpace(objectType))
+	if kind == "DATABASE" && objectName == "" {
+		return "*"
+	}
+	if kind == "SCHEMA" || kind == "DATABASE" {
 		return escapeIdentifier(objectName) + ".*"
 	}
 	parts := strings.Split(objectName, ".")

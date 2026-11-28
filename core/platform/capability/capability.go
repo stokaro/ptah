@@ -497,7 +497,9 @@ const (
 	// DatabaseGrants marks a target on which Ptah declares, reads and plans a
 	// privilege on the database itself, the database the schema is applied to.
 	// YDB holds one in the database root's access list and grants it with
-	// `GRANT ... ON `/db``. PostgreSQL's GRANT ... ON DATABASE exists and is
+	// `GRANT ... ON `/db``. MySQL and MariaDB grant one with `GRANT ... ON *`,
+	// which names the database the session selected, and read it as a grant on
+	// that database by name. PostgreSQL's GRANT ... ON DATABASE exists and is
 	// not modeled, so the key is false there.
 	DatabaseGrants Capability = "database_grants"
 
@@ -2161,7 +2163,7 @@ var registry = map[Capability]spec{
 		requires: []Capability{RoleManagement},
 	},
 	DatabaseGrants: {
-		doc:      "Ptah plans a privilege on the database itself (YDB's database root)",
+		doc:      "Ptah plans a privilege on the database itself (YDB's database root, the MySQL family's ON *)",
 		requires: []Capability{RoleManagement},
 	},
 	RelativeGrantPaths: {
@@ -2797,12 +2799,14 @@ func buildMySQL84() Capabilities {
 		// refused rather than created without it.
 		RoleManagement: true,
 		// MySQL 8 holds WITH ADMIN OPTION on a membership and no INHERIT or SET option.
-		// Groups, database grants and relative grant paths are YDB's.
+		// Groups and relative grant paths are YDB's. A grant on the database
+		// itself is GRANT ... ON *, which names the database the session
+		// selected.
 		RoleMembership:                     true,
 		RoleMembershipAdmin:                true,
 		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
-		DatabaseGrants:                     false,
+		DatabaseGrants:                     true,
 		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -3118,13 +3122,14 @@ func buildMariaDB1011() Capabilities {
 		// because what they ask for is a USER, and a declaration carrying one is
 		// refused rather than created without it.
 		RoleManagement: true,
-		// Membership, groups, database grants and relative grant paths are
-		// YDB's, or a plan this target's planner does not make.
+		// Membership, groups and relative grant paths are YDB's, or a plan
+		// this target's planner does not make. A grant on the database itself
+		// is GRANT ... ON *, as on MySQL.
 		RoleMembership:                     false,
 		RoleMembershipAdmin:                false,
 		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
-		DatabaseGrants:                     false,
+		DatabaseGrants:                     true,
 		RelativeGrantPaths:                 false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  false,

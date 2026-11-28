@@ -144,8 +144,12 @@ func withNoTransactionDirective(sql string) string {
 	if directive, ok := migrationfile.ParseDirectives(sql)[migrationfile.DirectiveNoTransaction]; ok && directive == "true" {
 		return sql
 	}
-	return "-- +ptah " + migrationfile.DirectiveNoTransaction + "\n" + sql
+	return noTransactionDirectiveLine + "\n" + sql
 }
+
+// noTransactionDirectiveLine is the line [withNoTransactionDirective] puts
+// first in a migration body.
+const noTransactionDirectiveLine = "-- +ptah " + migrationfile.DirectiveNoTransaction
 
 func renderMigrationArtifacts(
 	outputDir, reportFormat string,
