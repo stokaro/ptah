@@ -27,7 +27,10 @@ introspection and write helpers work in the default schema of the connection's
 database user, and migration metadata stays in `dbo`, so accounts with
 different default schemas read the same history. `--migrations-schema` /
 `WithMigrationsTable(schema, table)` still takes precedence for migration
-metadata.
+metadata. Without either, a run refuses when `dbo` holds no revision table and
+the user's default schema holds one, since reading the empty `dbo` would apply
+every migration again (`refuseStrandedConnectionHistory` in
+`migration/migrator`).
 
 ## Supported Surface
 

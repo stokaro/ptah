@@ -1012,6 +1012,13 @@ func (m *Migrator) WithMigrationsEngine(engine string) *Migrator {
 // through PTAH_MIGRATIONS_ENGINE rather than on the command line, that is the
 // difference between a one-line fix and a search (stokaro/ptah#2234).
 func (m *Migrator) migrationsTableCreateError(err error) error {
+	if kept, connected, apart := m.metadataSchemaApart(); apart {
+		return fmt.Errorf(
+			"failed to create migrations table in schema %q, where Ptah keeps its history when no schema is named; "+
+				"for a user that cannot create tables there, pass --migrations-schema %s (--revisions-schema %s in "+
+				"ptah-compat), or add schema=%s to the URL: %w",
+			kept, connected, connected, connected, err)
+	}
 	clause := strings.TrimSpace(m.revisionEngineClause())
 	if clause == "" {
 		return fmt.Errorf("failed to create migrations table: %w", err)
@@ -1374,6 +1381,9 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// Before the dry run as well: a status or a plan that read the empty
 	// placed table would report a migrated database as never migrated.
 	if err := m.refuseStrandedAtlasHistory(ctx); err != nil {
+		return err
+	}
+	if err := m.refuseStrandedConnectionHistory(ctx); err != nil {
 		return err
 	}
 

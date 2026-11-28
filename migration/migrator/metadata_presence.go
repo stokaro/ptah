@@ -918,9 +918,15 @@ func (m *Migrator) createsMetadataTable(ctx context.Context, table string) (bool
 // metadataTableExists reports whether the metadata table named table exists,
 // asking the engine's catalog.
 func (m *Migrator) metadataTableExists(ctx context.Context, table string) (bool, error) {
+	return m.tableExistsIn(ctx, m.metadataTableSchemaName(), table)
+}
+
+// tableExistsIn reports whether schema holds the table named table, asking
+// the engine's catalog.
+func (m *Migrator) tableExistsIn(ctx context.Context, schema, table string) (bool, error) {
 	query, args, err := migrationTablePresenceQuery(
 		m.connectionDialect(),
-		m.metadataTableSchemaName(),
+		schema,
 		m.connectionSchemaName(),
 		table,
 		m.quoteIdentifier,

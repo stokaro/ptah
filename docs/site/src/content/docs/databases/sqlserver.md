@@ -54,7 +54,22 @@ migration history with its log, tags and repeatable record, and the schema
 apply log. A database migrated as `sa` keeps its history in `dbo`, and an
 account whose default schema is `app` reads that history, so it does not run
 the migrations again. `--migrations-schema` takes precedence for the migration
-history.
+history, and `ptah migrations status` prints the schema it reads the history
+from.
+
+A run that names no schema refuses to start when `dbo` holds no revision table
+and the default schema of the connection's user holds one, as it does after an
+account whose default schema is `app` migrated through `--migrations-schema app`
+or `schema=app`: reading the empty `dbo` would apply every migration again. The
+refusal names both schemas. Pass `--migrations-schema app` (`--revisions-schema
+app` in `ptah-compat`) or add `schema=app` to the URL to keep the history where
+it is, or move the migration tables into `dbo`.
+
+A user who cannot create a table in `dbo`, such as one outside `db_owner`,
+cannot start a history there, and the error names the same flag and parameter.
+Such a user keeps no schema apply log either: `ptah schema apply` warns for each
+entry it cannot write, and applies the plan. Add `schema=app` to the URL to keep
+the log in the user's schema.
 
 ## Supported surface
 

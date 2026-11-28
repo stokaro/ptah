@@ -50,7 +50,8 @@ func sqlServerConnection(c *qt.C, schema, metadataSchema string) *dbschema.Datab
 // A database migrated as sa keeps its history in dbo, so an account whose
 // default schema is app reads the same history rather than an empty one in
 // app. A configured schema wins, and a connection that states no metadata
-// schema keeps the tables in its own schema.
+// schema keeps the tables in its own schema. MigrationsSchema names the
+// schema of the table, which status prints.
 func TestMigrationsTableIdentifier_SQLServerMetadataSchema(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -58,24 +59,25 @@ func TestMigrationsTableIdentifier_SQLServerMetadataSchema(t *testing.T) {
 		configured     string
 		format         migrator.RevisionTableFormat
 		want           string
+		wantSchema     string
 	}{
-		{name: "native layout in the metadata schema", metadataSchema: "dbo", format: migrator.RevisionTableFormatPtah, want: "[dbo].[schema_migrations]"},
-		{name: "Atlas layout in the metadata schema", metadataSchema: "dbo", format: migrator.RevisionTableFormatAtlas, want: "[dbo].[atlas_schema_revisions]"},
-		{name: "a schema the URL names", metadataSchema: "sales", format: migrator.RevisionTableFormatPtah, want: "[sales].[schema_migrations]"},
-		{name: "a configured schema wins", metadataSchema: "dbo", configured: "ops", format: migrator.RevisionTableFormatPtah, want: "[ops].[schema_migrations]"},
-		{name: "no metadata schema stated", format: migrator.RevisionTableFormatPtah, want: "[app].[schema_migrations]"},
+		{name: "native layout in the metadata schema", metadataSchema: "dbo", format: migrator.RevisionTableFormatPtah, want: "[dbo].[schema_migrations]", wantSchema: "dbo"},
+		{name: "Atlas layout in the metadata schema", metadataSchema: "dbo", format: migrator.RevisionTableFormatAtlas, want: "[dbo].[atlas_schema_revisions]", wantSchema: "dbo"},
+		{name: "a schema the URL names", metadataSchema: "sales", format: migrator.RevisionTableFormatPtah, want: "[sales].[schema_migrations]", wantSchema: "sales"},
+		{name: "a configured schema wins", metadataSchema: "dbo", configured: "ops", format: migrator.RevisionTableFormatPtah, want: "[ops].[schema_migrations]", wantSchema: "ops"},
+		{name: "no metadata schema stated", format: migrator.RevisionTableFormatPtah, want: "[app].[schema_migrations]", wantSchema: "app"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := sqlServerConnection(c, "app", test.metadataSchema)
 
-			got := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).
+			mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).
 				WithRevisionTableFormat(test.format).
-				WithMigrationsTable(test.configured, "").
-				MigrationsTableIdentifier()
+				WithMigrationsTable(test.configured, "")
 
-			c.Assert(got, qt.Equals, test.want)
+			c.Assert(mig.MigrationsTableIdentifier(), qt.Equals, test.want)
+			c.Assert(mig.MigrationsSchema(), qt.Equals, test.wantSchema)
 		})
 	}
 }
