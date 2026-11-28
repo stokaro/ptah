@@ -77,6 +77,25 @@ type Scope struct {
 	// guard then treats every extension and schema as one that outlives the
 	// run.
 	Survivors CleanupSurvivors
+	// DatabaseRoles is what every cleanup of the run does with the database
+	// roles of a SQL Server dev database; see [DatabaseRoleScope]. The zero
+	// value is a cleanup that drops none, and the guard then refuses a
+	// database role.
+	DatabaseRoles DatabaseRoleScope
+}
+
+// DatabaseRoleScope is what the cleanups of a run do with the database roles
+// of a SQL Server dev database. A database role lives in the database that
+// holds it, unlike a PostgreSQL role, so a cleanup that drops the ones the run
+// created confines a CREATE ROLE to the dev database.
+type DatabaseRoleScope struct {
+	// Dropped reports that every cleanup of the run drops each database role
+	// the claim did not find, because the claim listed them.
+	Dropped bool
+	// Kept names the database roles the claim found. They are the dev
+	// database's own and outlive the run, so the drop of one would outlive it
+	// too.
+	Kept []string
 }
 
 // CleanupSurvivors names the extensions and schemas of the dev database that

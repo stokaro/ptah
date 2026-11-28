@@ -59,6 +59,10 @@ type ReplayGuard struct {
 	// survivors answers [replay.Scope.Survivors] when a statement is
 	// validated; see [ReplayGuard.WithSurvivors]. Nil names none.
 	survivors func() replay.CleanupSurvivors
+	// databaseRoles answers [replay.Scope.DatabaseRoles] when a statement is
+	// validated; see [ReplayGuard.WithDatabaseRoles]. Nil is a cleanup that
+	// drops no database role.
+	databaseRoles func() replay.DatabaseRoleScope
 	// session is set only by a caller that discards its pinned replay session.
 	session bool
 	// ownTransactions is set only by a caller that replays an existing history
@@ -396,6 +400,21 @@ func (g *ReplayGuard) WithPublications(publications func() replay.PublicationSco
 	return &guard
 }
 
+// WithDatabaseRoles returns a copy of the guard for a run whose cleanups do
+// with the dev database's database roles what roles answers, as
+// [Baseline.DatabaseRoles] does for a claim. It is asked when a statement is
+// validated, as [ReplayGuard.WithPublications] is.
+//
+// On SQL Server the copy accepts CREATE ROLE, and DROP ROLE of a role the
+// claim did not find, for a run whose every cleanup drops the database roles
+// the run created. A guard without it refuses every database principal, since
+// nothing would take one away.
+func (g *ReplayGuard) WithDatabaseRoles(roles func() replay.DatabaseRoleScope) *ReplayGuard {
+	guard := *g
+	guard.databaseRoles = roles
+	return &guard
+}
+
 // WithSurvivors returns a copy of the guard for a run whose every cleanup
 // leaves in place the extensions and schemas survivors names and drops the
 // others, as [Baseline.Survivors] answers for a claim. A replay can build its
@@ -490,6 +509,9 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm, trusted bool) err
 	}
 	if g.survivors != nil {
 		scope.Survivors = g.survivors()
+	}
+	if g.databaseRoles != nil {
+		scope.DatabaseRoles = g.databaseRoles()
 	}
 	return g.guard.Validate(stmt, scope)
 }

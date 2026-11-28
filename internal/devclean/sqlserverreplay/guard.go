@@ -1,6 +1,9 @@
 package sqlserverreplay
 
 import (
+	"fmt"
+	"strings"
+
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
@@ -68,7 +71,7 @@ func (g guard) validateReplayStatement(tokens []lexer.Token, scope replay.Scope)
 	if err := validateSQLServerStatementTargets(tokens, first, scope); err != nil {
 		return err
 	}
-	return validateSQLServerStoredObjects(tokens, first)
+	return validateSQLServerStoredObjects(tokens, first, scope)
 }
 
 // validateSQLServerStatementScope refuses a permission change and a statement
@@ -106,8 +109,10 @@ func validateSQLServerStatementTargets(tokens []lexer.Token, first string, scope
 }
 
 // validateSQLServerStoredObjects refuses the objects the realm cleanup does not
-// remove. Trust lifts none of them.
-func validateSQLServerStoredObjects(tokens []lexer.Token, first string) error {
+// remove. Trust lifts none of them. A database role is one only where the
+// cleanup does not drop the roles the run creates; see
+// [sqlServerConfinedDatabaseRole].
+func validateSQLServerStoredObjects(tokens []lexer.Token, first string, scope replay.Scope) error {
 	if sqlServerExternalTableWritesData(tokens) {
 		return replay.Refuse(
 			platform.SQLServer,
@@ -120,10 +125,52 @@ func validateSQLServerStoredObjects(tokens []lexer.Token, first string) error {
 	if sqlServerEnablesLedger(tokens) {
 		return replay.Refuse(platform.SQLServer, "LEDGER table")
 	}
+	if confined, err := sqlServerDatabaseRole(tokens, scope.DatabaseRoles); confined || err != nil {
+		return err
+	}
 	if operation := sqlServerUnsupportedRealmOperation(tokens); operation != "" {
 		return replay.Refuse(platform.SQLServer, operation)
 	}
 	return nil
+}
+
+// sqlServerDatabaseRole decides a CREATE ROLE or DROP ROLE on a dev database
+// whose every cleanup drops the database roles the run creates. A database
+// role lives in the database that holds it, so such a cleanup confines it to
+// the dev database: CREATE ROLE is confined, and so is DROP ROLE of a role the
+// claim did not find. The drop of one it found is refused, since the role
+// would stay gone after the run. confined is false for every other statement,
+// which the caller judges as before: ALTER ROLE stays refused, because it can
+// add a member the claim found to a fixed role and that membership outlives
+// the run, and so do an application role, which carries a password, and a
+// user, which can map a server login.
+func sqlServerDatabaseRole(tokens []lexer.Token, roles replay.DatabaseRoleScope) (confined bool, err error) {
+	if !roles.Dropped || !replay.IsDDLAction(tokens) || !sqlServerKeywordSequenceAt(tokens, 1, "ROLE") {
+		return false, nil
+	}
+	switch replay.NormalizedIdentifier(tokens[0]) {
+	case "CREATE":
+		return true, nil
+	case "DROP":
+		index := 2
+		if sqlServerKeywordSequenceAt(tokens, index, "IF", "EXISTS") {
+			index += 2
+		}
+		if index >= len(tokens) {
+			return false, nil
+		}
+		name := replay.NormalizedIdentifier(tokens[index])
+		if name == "" {
+			return false, nil
+		}
+		for _, kept := range roles.Kept {
+			if strings.EqualFold(kept, name) {
+				return false, replay.Refuse(platform.SQLServer, fmt.Sprintf("DROP DATABASE PRINCIPAL of the dev database's own role %q", kept))
+			}
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func sqlServerRejectsExternalTableDDL(tokens []lexer.Token) bool {

@@ -450,6 +450,15 @@ collations and the clause to create the dev or shadow database with, such as
 `COLLATE SQL_Latin1_General_CP1_CI_AS`. Ptah does not provision a SQL Server
 database from a `docker://` URL, so you create it.
 
+A database role belongs to the database that holds it, so `schema apply
+--dev-url` runs the `CREATE ROLE` of a role the plan adds on the dev database,
+and creates there the roles the target holds. The cleanup after the rehearsal
+drops each role the dev database did not hold when the run began, with its
+memberships, so no role outlives the run. A dev database that holds a role of
+its own is refused, because the cleanup cannot tell whose the role is.
+`ALTER ROLE`, an application role and a user stay refused on a dev database:
+each can reach a principal the run did not create.
+
 Collations with different names that agree on the four sensitivities pass,
 such as `SQL_Latin1_General_CP1_CI_AS` and `Latin1_General_100_CI_AS`. They
 can still read some names differently: a collation of an older version gives

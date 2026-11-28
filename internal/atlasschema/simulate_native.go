@@ -147,7 +147,9 @@ func (p ApplyRuntimePlan) planOnDev(
 	if err != nil {
 		return ApplyPlan{}, err
 	}
-	if err := guardRehearsedUnits(plan.units, guard.WithPublications(baseline.Publications).WithSurvivors(baseline.Survivors), devConn); err != nil {
+	guard = guard.WithPublications(baseline.Publications).WithSurvivors(baseline.Survivors).
+		WithDatabaseRoles(baseline.DatabaseRoles)
+	if err := guardRehearsedUnits(plan.units, guard, devConn); err != nil {
 		return ApplyPlan{}, err
 	}
 	return plan, nil

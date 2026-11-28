@@ -517,7 +517,7 @@ func rehearseStatementsOnDev(
 		return err
 	}
 	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
-		WithSurvivors(baseline.Survivors)
+		WithSurvivors(baseline.Survivors).WithDatabaseRoles(baseline.DatabaseRoles)
 	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
@@ -787,7 +787,7 @@ func recreateCurrentSchema(
 		return nil, err
 	}
 	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
-		WithSurvivors(baseline.Survivors)
+		WithSurvivors(baseline.Survivors).WithDatabaseRoles(baseline.DatabaseRoles)
 	dev := baselineDev{
 		info:     devConn.Info(),
 		guard:    guard,
