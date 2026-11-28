@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlscript"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -819,14 +820,14 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	if node.Replace && !r.caps.Has(capability.CreateOrReplaceTrigger) {
-		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s;", escapeIdentifier(node.Name))
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s;", triggerName(node.Name, node.Table))
 	}
 	create := "CREATE TRIGGER"
 	if node.Replace && r.caps.Has(capability.CreateOrReplaceTrigger) {
 		create = "CREATE OR REPLACE TRIGGER"
 	}
 	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s",
-		create, escapeIdentifier(node.Name), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), terminateStatement(node.Body))
+		create, triggerName(node.Name, node.Table), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), terminateStatement(node.Body))
 	return nil
 }
 
@@ -881,9 +882,25 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, escapeIdentifier(node.Name))
+	parts = append(parts, triggerName(node.Name, node.Table))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// triggerName quotes a trigger's name, qualified by the database of the table
+// it belongs to where table names one. A trigger lives in its table's
+// database, and a whole-server session selects no database: there an
+// unqualified CREATE TRIGGER or DROP TRIGGER is refused with Error 1046 (No
+// database selected), measured on MySQL 8.4.13 and MariaDB 11.8.9. Without the
+// qualifier, a plan that drops a database's routines and then its trigger stops
+// at the trigger, with the routines gone and the trigger, its table and its
+// views kept.
+func triggerName(name, table string) string {
+	ref, ok := tableref.Parse(table)
+	if !ok || !ref.Qualified {
+		return escapeIdentifier(name)
+	}
+	return escapeIdentifier(ref.Schema) + "." + escapeIdentifier(name)
 }
 
 // RenderColumn renders a column definition

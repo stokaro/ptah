@@ -226,7 +226,8 @@ func TestPlanner_TriggerSwap_StatementOrder(t *testing.T) {
 			},
 			want: "LOCK TABLES mytable WRITE;\n" +
 				"CREATE TRIGGER audit_v2 AFTER INSERT ON mytable FOR EACH ROW " + oldBody + ";\n" +
-				"DROP TRIGGER IF EXISTS audit_v1;\n" +
+				// The trigger is named in the database its table is named in.
+				"DROP TRIGGER IF EXISTS app.audit_v1;\n" +
 				"UNLOCK TABLES;",
 		},
 	}

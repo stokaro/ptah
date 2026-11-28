@@ -53,6 +53,10 @@ func TestNames_Same(t *testing.T) {
 		{name: "another case on a server that folds", folds: true, left: "FA", right: "fa", want: true},
 		{name: "mixed case on a server that folds", folds: true, left: "Fa", right: "fA", want: true},
 		{name: "another name on a server that folds", folds: true, left: "fb", right: "fa", want: false},
+		// The server lower-cases a name, and the long s is lower case already,
+		// so it names another database than s.
+		{name: "a letter only case folding joins, on a server that folds", folds: true, left: "s", right: "ſ", want: false},
+		{name: "the long s against S on a server that folds", folds: true, left: "S", right: "ſ", want: false},
 		{name: "the same bytes on a server that keeps case apart", left: "fa", right: "fa", want: true},
 		{name: "another case on a server that keeps case apart", left: "FA", right: "fa", want: false},
 		{name: "another name on a server that keeps case apart", left: "fb", right: "fa", want: false},
