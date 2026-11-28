@@ -37,6 +37,12 @@ type RefusalError struct {
 // Error states the refusal and its remedies.
 func (e *RefusalError) Error() string {
 	removal, blocker := e.Removal, e.Removal.BlockedBy
+	if removal.NeededBy != "" {
+		// The table that needs the object is the one the remedies are for,
+		// and its own refusal names them.
+		return fmt.Sprintf("cannot drop %s %q: table %q needs it, and that table stays because the selection blocks a drop; "+
+			"the refusal of that drop says how to resolve it", removal.Kind, removal.Name, removal.NeededBy)
+	}
 	noun := "database"
 	if removal.Kind == difftypes.BlockedTable {
 		noun = "table"

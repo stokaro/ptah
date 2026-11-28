@@ -702,6 +702,27 @@ table "t" {
 // trg. It returns a connection to it and the URL naming it.
 func sqlServerChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
+	conn, target := sqlServerScratchDatabase(c)
+	for _, statement := range []string{
+		"CREATE TABLE dbo.t (id int NOT NULL PRIMARY KEY)",
+		"CREATE TABLE dbo.u (id int NOT NULL PRIMARY KEY, c int, d int, " +
+			"CONSTRAINT u_d_fk FOREIGN KEY (d) REFERENCES dbo.t (id), CONSTRAINT ck CHECK (d > 0))",
+		"CREATE INDEX ix ON dbo.u (c)",
+		"CREATE INDEX ixd ON dbo.u (d)",
+		"CREATE TRIGGER dbo.trg ON dbo.u AFTER INSERT AS SET NOCOUNT ON",
+		"INSERT INTO dbo.t VALUES (1)",
+		"INSERT INTO dbo.u VALUES (1, 42, 1)",
+	} {
+		_, err := conn.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil)
+	}
+	return conn, target
+}
+
+// sqlServerScratchDatabase is an empty SQL Server database, dropped when the
+// test ends. It returns a connection to it and the URL naming it.
+func sqlServerScratchDatabase(c *qt.C) (*dbschema.DatabaseConnection, string) {
+	c.Helper()
 	adminURL := dbtarget.URL(c, dbtarget.SQLServer)
 	admin, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
 	c.Assert(err, qt.IsNil)
@@ -718,19 +739,6 @@ func sqlServerChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	for _, statement := range []string{
-		"CREATE TABLE dbo.t (id int NOT NULL PRIMARY KEY)",
-		"CREATE TABLE dbo.u (id int NOT NULL PRIMARY KEY, c int, d int, " +
-			"CONSTRAINT u_d_fk FOREIGN KEY (d) REFERENCES dbo.t (id), CONSTRAINT ck CHECK (d > 0))",
-		"CREATE INDEX ix ON dbo.u (c)",
-		"CREATE INDEX ixd ON dbo.u (d)",
-		"CREATE TRIGGER dbo.trg ON dbo.u AFTER INSERT AS SET NOCOUNT ON",
-		"INSERT INTO dbo.t VALUES (1)",
-		"INSERT INTO dbo.u VALUES (1, 42, 1)",
-	} {
-		_, err := conn.ExecContext(c.Context(), statement)
-		c.Assert(err, qt.IsNil)
-	}
 	return conn, target
 }
 

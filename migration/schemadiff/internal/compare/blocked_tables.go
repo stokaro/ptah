@@ -2,6 +2,7 @@ package compare
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 
 	"ptah.run/catalog"
@@ -16,7 +17,10 @@ import (
 
 // WithoutBlockedTables returns database without each table whose drop the
 // selection blocks, and without every part that belongs to such a table, and
-// records each one in diff.RemovalsBlocked.
+// records each one in diff.RemovalsBlocked. What such a table needs leaves
+// the comparison with it and is recorded the same way; see [neededByKept].
+// The databases that hold a kept table are returned for [ServerSchemas],
+// which records the drop of one only where a whole-server comparison plans it.
 //
 // A blocked table is one the database holds and desired does not declare,
 // that coverage would drop, and that [catalog.Database.TableRemovalBlockers]
@@ -41,9 +45,9 @@ func WithoutBlockedTables(
 	dialect string,
 	semantics identifier.Semantics,
 	cov Coverage,
-) *catalog.Database {
+) (*catalog.Database, HeldDatabases) {
 	if database == nil || len(database.TableRemovalBlockers) == 0 {
-		return database
+		return database, nil
 	}
 	declared := make(map[tableIdentity]struct{})
 	if desired != nil {
@@ -53,6 +57,7 @@ func WithoutBlockedTables(
 	}
 	builder := objectidentity.NewBuilder(semantics)
 	blocked := make(map[tableIdentity]struct{})
+	var kept []keptTable
 	for _, table := range database.Tables {
 		identity := tableMapIdentity(table.Schema, table.Name, dialect, semantics)
 		if _, exists := declared[identity]; exists {
@@ -75,15 +80,19 @@ func WithoutBlockedTables(
 			continue
 		}
 		blocked[identity] = struct{}{}
+		kept = append(kept, keptTable{table: table, name: removal.Name, blocker: blocker})
 		diff.RemovalsBlocked = append(diff.RemovalsBlocked, difftypes.BlockedRemoval{
 			Kind: difftypes.BlockedTable, Name: removal.Name, BlockedBy: blocker,
 		})
 	}
 	if len(blocked) == 0 {
-		return database
+		return database, nil
 	}
+	needs := neededByKept(desired, database, kept, declared, dialect, semantics, cov)
+	maps.Copy(blocked, needs.tables)
+	diff.RemovalsBlocked = append(diff.RemovalsBlocked, needs.removals...)
 	SortRemovalsBlocked(diff)
-	return withoutTables(database, blocked, dialect, semantics)
+	return withoutNeeds(withoutTables(database, blocked, dialect, semantics), needs, semantics), needs.databases
 }
 
 // withoutTables is a copy of database without tables and the parts a

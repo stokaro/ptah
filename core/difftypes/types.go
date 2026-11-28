@@ -825,9 +825,13 @@ type SchemaDiff struct {
 	// because the database or table holds an object a selection left out of
 	// the description, and dropping it would remove that object too: with
 	// --exclude db.t, the database db, and with --exclude db.u.c, the table
-	// db.u. A command that plans or applies SQL refuses a comparison that
-	// holds one; a command that reports lists it with its other findings.
-	// Sorted by kind, then name.
+	// db.u. A table so blocked stays as the database holds it, so what it
+	// needs stays too, and is listed with a [BlockedRemoval.NeededBy]: a
+	// table its foreign key references, a function its trigger executes, or
+	// an enum type a column of it has. A command that plans or applies SQL
+	// refuses a comparison that holds one; a command that reports lists it
+	// with its other findings. Sorted with the drops the selection blocks
+	// first, then by kind, then name.
 	RemovalsBlocked []BlockedRemoval `json:"removals_blocked,omitempty"`
 
 	// SchemasModified are the schemas both sides hold whose character set or
@@ -1647,19 +1651,29 @@ const (
 	BlockedDatabase = "database"
 	// BlockedTable is a table.
 	BlockedTable = "table"
+	// BlockedFunction is a function a kept table's trigger executes.
+	BlockedFunction = "function"
+	// BlockedType is an enum type a column of a kept table has.
+	BlockedType = "type"
 )
 
 // BlockedRemoval is one drop a comparison withheld; see
 // [SchemaDiff.RemovalsBlocked].
 type BlockedRemoval struct {
-	// Kind is [BlockedDatabase] or [BlockedTable].
+	// Kind is [BlockedDatabase], [BlockedTable], [BlockedFunction] or
+	// [BlockedType].
 	Kind string `json:"kind"`
-	// Name is the database or table, spelled as the plan would name it in its
-	// DROP.
+	// Name is the object, spelled as the plan would name it in its DROP.
 	Name string `json:"name"`
 	// BlockedBy is the object the drop would remove, and why the selection
-	// left it out.
+	// left it out. For a drop withheld because a kept table needs the object,
+	// it is the blocker of the drop that keeps that table.
 	BlockedBy catalog.SelectionBlocker `json:"blocked_by"`
+	// NeededBy is the table, spelled as the plan would name it, that needs
+	// this object and stays: one whose drop the selection blocks, or one kept
+	// because such a table needs it. It is empty for a drop the selection
+	// blocks itself.
+	NeededBy string `json:"needed_by,omitempty"`
 }
 
 // SchemaChange is a schema whose attributes a whole-server comparison

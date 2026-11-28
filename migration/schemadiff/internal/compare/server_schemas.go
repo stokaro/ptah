@@ -43,7 +43,9 @@ import (
 // outside the selection for each database that holds one. Such a database is
 // not dropped either: it is recorded in [difftypes.SchemaDiff.RemovalsBlocked],
 // for a command that plans SQL to refuse and a command that reports to list.
-// A nil map leaves every database eligible for removal.
+// A nil map leaves every database eligible for removal. A database in
+// heldDatabases holds a table the comparison keeps, and is recorded the same way,
+// with the entry heldDatabases gives it.
 func ServerSchemas(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
@@ -51,6 +53,7 @@ func ServerSchemas(
 	semantics identifier.Semantics,
 	cov Coverage,
 	removalBlockers map[string]catalog.SelectionBlocker,
+	heldDatabases HeldDatabases,
 ) {
 	held := make(map[string]catalog.Schema, len(current))
 	for _, schema := range current {
@@ -87,6 +90,10 @@ func ServerSchemas(
 			})
 			continue
 		}
+		if removal, kept := heldDatabases[schema.Name]; kept {
+			diff.RemovalsBlocked = append(diff.RemovalsBlocked, removal)
+			continue
+		}
 		diff.SchemasRemoved = append(diff.SchemasRemoved, schema.Name)
 	}
 	slices.SortFunc(diff.SchemasAdded, func(a, b schemamodel.Schema) int { return cmp.Compare(a.Name, b.Name) })
@@ -96,10 +103,17 @@ func ServerSchemas(
 }
 
 // SortRemovalsBlocked puts [difftypes.SchemaDiff.RemovalsBlocked] in the order
-// its documentation states: by kind, then name.
+// its documentation states: the drops the selection blocks before the ones a
+// kept table needs, then by kind, then name.
 func SortRemovalsBlocked(diff *difftypes.SchemaDiff) {
+	needed := func(removal difftypes.BlockedRemoval) int {
+		if removal.NeededBy != "" {
+			return 1
+		}
+		return 0
+	}
 	slices.SortFunc(diff.RemovalsBlocked, func(a, b difftypes.BlockedRemoval) int {
-		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
+		return cmp.Or(cmp.Compare(needed(a), needed(b)), cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
 	})
 }
 
