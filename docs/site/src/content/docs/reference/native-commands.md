@@ -501,7 +501,10 @@ name or, for a key written without one, under its first column's.
 A foreign key into a table `--exclude` leaves out names a table the server
 keeps, so the desired schema may declare it without declaring the table:
 `--exclude parents` with `kids (parent_id) REFERENCES parents (id)`, qualified
-or not. The first apply adds the key, and the next compares it with the key the
+or not. Beside `--schemas` the same holds: `--schemas app --exclude
+app.parents` keeps the key out of scope with the table. A table that
+`--schemas` or `--include` leaves out is still refused, because the selection
+does not hold it. The first apply adds the key, and the next compares it with the key the
 server holds and plans nothing. A key into an excluded table that the desired
 schema leaves out is not dropped, and on MySQL and MariaDB the index the server
 built for it stays with it.

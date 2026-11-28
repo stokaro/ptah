@@ -32,11 +32,18 @@ func (d scopeDiagnostics) err() error {
 // column types whose type object was dropped. Only dependencies the selection
 // dropped are diagnosed: a reference to an object that was never part of the
 // same state behaves exactly as it does without a selection.
-func validateGeneratedScope(original, final *schemamodel.Database, selection *scopeSelection) error {
+//
+// A foreign key into a table that projected holds and the exclusion left out
+// is not diagnosed. The exclusion keeps such a key out of scope, as it does
+// without a positive selection, so the same exclusion gives one answer with
+// `--schemas` and without it. Diagnosed, the key a first apply created was
+// refused on the next run, which reads it back from the database
+// (stokaro/ptah#6851).
+func validateGeneratedScope(original, projected, final *schemamodel.Database, selection *scopeSelection) error {
 	diagnostics := make(scopeDiagnostics)
 	keptByStruct := generatedTableByStruct(final.Tables)
 
-	validateGeneratedForeignKeys(original, final, keptByStruct, diagnostics)
+	validateGeneratedForeignKeys(original, projected, final, keptByStruct, diagnostics)
 	validateGeneratedFunctions(original, final, diagnostics)
 	validateGeneratedBodies(original, final, diagnostics)
 	validateGeneratedTypes(original, final, selection, diagnostics)
@@ -44,7 +51,7 @@ func validateGeneratedScope(original, final *schemamodel.Database, selection *sc
 }
 
 func validateGeneratedForeignKeys(
-	original, final *schemamodel.Database,
+	original, projected, final *schemamodel.Database,
 	keptByStruct map[string]schemamodel.Table,
 	diagnostics scopeDiagnostics,
 ) {
@@ -53,14 +60,14 @@ func validateGeneratedForeignKeys(
 		if !ok || field.Foreign == "" {
 			continue
 		}
-		reportGeneratedTableDependency(original, final, owner, foreignReferenceTableName(field.Foreign), diagnostics)
+		reportGeneratedTableDependency(original, projected, final, owner, foreignReferenceTableName(field.Foreign), diagnostics)
 	}
 	for _, embedded := range original.EmbeddedFields {
 		owner, ok := keptByStruct[embedded.StructName]
 		if !ok || embedded.Mode != "relation" || embedded.Ref == "" {
 			continue
 		}
-		reportGeneratedTableDependency(original, final, owner, foreignReferenceTableName(embedded.Ref), diagnostics)
+		reportGeneratedTableDependency(original, projected, final, owner, foreignReferenceTableName(embedded.Ref), diagnostics)
 	}
 	for _, constraint := range original.Constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || constraint.ForeignTable == "" {
@@ -70,20 +77,21 @@ func validateGeneratedForeignKeys(
 		if !ok {
 			continue
 		}
-		reportGeneratedTableDependency(original, final, owner, constraint.ForeignTable, diagnostics)
+		reportGeneratedTableDependency(original, projected, final, owner, constraint.ForeignTable, diagnostics)
 	}
 }
 
 // reportGeneratedTableDependency records a diagnostic when reference names a
-// table that exists in the original schema but was dropped by the selection.
+// table that exists in the original schema but was dropped by the positive
+// selection. A table projected holds was dropped by the exclusion alone.
 func reportGeneratedTableDependency(
-	original, final *schemamodel.Database,
+	original, projected, final *schemamodel.Database,
 	owner schemamodel.Table,
 	reference string,
 	diagnostics scopeDiagnostics,
 ) {
 	reference = strings.TrimSpace(reference)
-	if reference == "" || generatedTableNameKept(final.Tables, reference) {
+	if reference == "" || generatedTableNameKept(final.Tables, reference) || generatedTableNameKept(projected.Tables, reference) {
 		return
 	}
 	for _, table := range original.Tables {
@@ -215,13 +223,19 @@ func generatedEnumKept(enums []schemamodel.Enum, schema, name string) bool {
 }
 
 // validateDatabaseScope refuses projections where a selected introspected
-// table has a foreign key to a table the selection dropped, or where kept
-// columns use a type object the selection dropped.
-func validateDatabaseScope(original, final *catalog.Database, selection *scopeSelection) error {
+// table has a foreign key to a table the positive selection dropped, or where
+// kept columns use a type object the selection dropped. A key into a table the
+// exclusion alone left out is kept out of scope, as [validateGeneratedScope]
+// says.
+func validateDatabaseScope(original, projected, final *catalog.Database, selection *scopeSelection) error {
 	diagnostics := make(scopeDiagnostics)
 	kept := make(map[tableIdentity]struct{}, len(final.Tables))
 	for _, table := range final.Tables {
 		kept[selection.tableIdentity(table.Schema, table.Name)] = struct{}{}
+	}
+	selected := make(map[tableIdentity]struct{}, len(projected.Tables))
+	for _, table := range projected.Tables {
+		selected[selection.tableIdentity(table.Schema, table.Name)] = struct{}{}
 	}
 	existed := make(map[tableIdentity]struct{}, len(original.Tables))
 	for _, table := range original.Tables {
@@ -240,7 +254,8 @@ func validateDatabaseScope(original, final *catalog.Database, selection *scopeSe
 		_, ownerKept := kept[owner.Key()]
 		_, foreignKept := kept[foreign.Key()]
 		_, foreignExisted := existed[foreign.Key()]
-		if ownerKept && foreignExisted && !foreignKept {
+		_, foreignSelected := selected[foreign.Key()]
+		if ownerKept && foreignExisted && !foreignKept && !foreignSelected {
 			ownerName := catalog.QualifyTableName(owner.Schema.Source, owner.Name.Source)
 			foreignName := catalog.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
 			diagnostics.addf("table %q depends on table %q via a foreign key, but %q is not selected",

@@ -255,16 +255,38 @@ func TestLiveSelection_ApplyRefusesAnIncludeThatMatchedNothing(t *testing.T) {
 	c.Assert(gotDesired, qt.IsNil)
 }
 
-// TestLiveSelection_ApplyRefusesASelectionThatDropsADependency covers the object a
-// selected object needs. The refusal takes a positive selection, which is what
-// each row has, and the last test is what a run without one gets.
+// TestLiveSelection_ApplyRefusesASelectionThatDropsADependency covers the table
+// a selected table's foreign key needs, which an include does not pick. The
+// refusal takes a positive selection; the next test is what an exclusion gets.
 func TestLiveSelection_ApplyRefusesASelectionThatDropsADependency(t *testing.T) {
+	c := qt.New(t)
+	current, desired := liveSelectionSides()
+	selection := atlasschema.LiveSelection{Include: []string{"public.orders"}}
+
+	gotCurrent, gotDesired, err := selection.Apply(c.Context(), must.Must(builtin.New()), realmInfo, current, desired)
+
+	var refused *atlasfilter.CrossScopeError
+	c.Assert(err, qt.ErrorAs, &refused)
+	c.Assert(err, qt.ErrorMatches, `(?s).*table "public\.orders" depends on table "public\.users" via a foreign key, but "public\.users" is not selected.*`)
+	c.Assert(gotCurrent, qt.IsNil)
+	c.Assert(gotDesired, qt.IsNil)
+}
+
+// TestLiveSelection_ApplyKeepsAKeyIntoAnExcludedTableOutOfScope covers the
+// table a selected table's foreign key needs, which the exclusion leaves out.
+// The key is out of scope with the table, as it is without a positive
+// selection, so a key a first apply created does not refuse the next run
+// (stokaro/ptah#6851).
+func TestLiveSelection_ApplyKeepsAKeyIntoAnExcludedTableOutOfScope(t *testing.T) {
 	tests := []struct {
 		name      string
+		info      catalog.ServerInfo
 		selection atlasschema.LiveSelection
 	}{
-		{name: "an include", selection: atlasschema.LiveSelection{Include: []string{"public.orders"}}},
-		{name: "--schemas and an exclude", selection: atlasschema.LiveSelection{Schemas: []string{"public"}, Exclude: []string{"public.users"}}},
+		{name: "--schemas and an exclude", info: realmInfo, selection: atlasschema.LiveSelection{
+			Schemas: []string{"public"}, Exclude: []string{"public.users"},
+		}},
+		{name: "an exclude alone", info: pinnedInfo, selection: atlasschema.LiveSelection{Exclude: []string{"users"}}},
 	}
 
 	for _, test := range tests {
@@ -272,13 +294,12 @@ func TestLiveSelection_ApplyRefusesASelectionThatDropsADependency(t *testing.T) 
 			c := qt.New(t)
 			current, desired := liveSelectionSides()
 
-			gotCurrent, gotDesired, err := test.selection.Apply(c.Context(), must.Must(builtin.New()), realmInfo, current, desired)
+			gotCurrent, gotDesired, err := test.selection.Apply(c.Context(), must.Must(builtin.New()), test.info, current, desired)
 
-			var refused *atlasfilter.CrossScopeError
-			c.Assert(err, qt.ErrorAs, &refused)
-			c.Assert(err, qt.ErrorMatches, `(?s).*table "public\.orders" depends on table "public\.users" via a foreign key, but "public\.users" is not selected.*`)
-			c.Assert(gotCurrent, qt.IsNil)
-			c.Assert(gotDesired, qt.IsNil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(currentTableNames(gotCurrent), qt.DeepEquals, []string{"orders", "databasechangelog"})
+			c.Assert(gotCurrent.Constraints, qt.HasLen, 0)
+			c.Assert(desiredTableNames(gotDesired), qt.Contains, "orders")
 		})
 	}
 }

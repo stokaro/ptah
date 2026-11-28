@@ -1798,7 +1798,10 @@ created, modified, or dropped. A selected object that depends on an object the
 selection dropped — a foreign key to an unselected table, a function calling
 an unselected function, a view or trigger body referencing an unselected
 relation, a column using an excluded enum — refuses the plan with an explicit
-cross-scope diagnostic instead of emitting incomplete SQL:
+cross-scope diagnostic instead of emitting incomplete SQL. A foreign key into a
+table that `--exclude` leaves out from the selection is the exception: the key
+is out of scope with the table, as it is without `--schema` and `--include`,
+so the next apply reads the key back and plans nothing.
 
 ```text
 error: apply --schema/--include to desired schema: the --schema/--include selection drops objects that selected objects depend on:

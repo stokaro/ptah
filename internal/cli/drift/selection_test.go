@@ -208,11 +208,6 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES
 			want:  `(?s)apply --schema/--include to current schema: the --schema/--include selection drops objects that selected objects depend on:\n  - table "main\.orders" depends on table "main\.users" via a foreign key, but "main\.users" is not selected\n.*`,
 		},
 		{
-			name:  "--schemas and an exclude leaving out what a selected object needs",
-			flags: []string{"--schemas", "main", "--exclude", "users"},
-			want:  `(?s)apply --schema/--include to current schema: the --schema/--include selection drops objects that selected objects depend on:\n  - table "main\.orders" depends on table "main\.users" via a foreign key, but "main\.users" is not selected\n.*`,
-		},
-		{
 			name:  "an exclude too deep for this run's scope",
 			flags: []string{"--exclude", "a.b.c"},
 			want:  `apply exclude selectors to current schema: too many parts in pattern "a\.b\.c".*`,
@@ -234,6 +229,38 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES
 			c.Assert(document.Error, qt.IsNotNil)
 			c.Assert(document.Error.Kind, qt.Equals, errorkind.Kind(""))
 			c.Assert(document.Error.Message, qt.Matches, test.want)
+		})
+	}
+}
+
+// TestRunDrift_AKeyIntoAnExcludedTableIsOutOfScope covers the table a selected
+// table's foreign key needs, which the exclusion leaves out. With --schemas or
+// without it, the key is out of scope with the table, and the check finds no
+// drift (stokaro/ptah#6851).
+func TestRunDrift_AKeyIntoAnExcludedTableIsOutOfScope(t *testing.T) {
+	const foreignKey = `CREATE TABLE users (id INTEGER PRIMARY KEY);
+CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users (id));
+`
+	tests := []struct {
+		name  string
+		flags []string
+	}{
+		{name: "--schemas and an exclude", flags: []string{"--schemas", "main", "--exclude", "users"}},
+		{name: "an exclude alone", flags: []string{"--exclude", "users"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, schemaFile := selectionFixture(c, foreignKey, foreignKey)
+			args := append([]string{"--db-url", url, "--schema-file", schemaFile, "--format", "json"}, test.flags...)
+
+			code, stdout, stderr := runDriftCommand(c, args...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			report := decodeSelectionReport(c, stdout)
+			c.Assert(report.Drift, qt.IsFalse)
+			c.Assert(report.Findings, qt.HasLen, 0)
 		})
 	}
 }
