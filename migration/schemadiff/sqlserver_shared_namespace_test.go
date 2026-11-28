@@ -211,6 +211,45 @@ func TestValidateDesiredSchema_SQLServerConstraintsAndTriggersBesideOtherKinds_F
 			want: `target table dbo\.parent and constraint dbo\.parent on dbo\.t1 are one name`,
 		},
 		{
+			name: "a derived foreign key name named as a view",
+			desired: reportView(reportTable(schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}},
+				Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "INT", Primary: true}},
+			}, schemamodel.Table{Name: "t1"}, schemamodel.Field{Foreign: "parent(id)", ForeignKeyName: "Report", ForeignKeyNameDerived: true})),
+			want: `target view dbo\.Report and constraint dbo\.Report on dbo\.t1 are one name`,
+		},
+		{
+			// Ptah derives fk_t1_n for the unnamed key and writes it.
+			name: "an unnamed foreign key beside a table of its derived name",
+			desired: new(reportTable(schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}, {StructName: "Clash", Name: "fk_t1_n"}},
+				Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "INT", Primary: true}},
+			}, schemamodel.Table{Name: "t1"}, schemamodel.Field{Foreign: "parent(id)"})),
+			want: `target table dbo\.fk_t1_n and constraint dbo\.fk_t1_n on dbo\.t1 are one name`,
+		},
+		{
+			// Measured on SQL Server 2025: CREATE VIEW t1_pkey beside the
+			// table t1, whose key Ptah writes as t1_pkey, fails with error 2714.
+			name: "an unnamed primary key beside a view of its name",
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "INT", Primary: true}},
+				Views:  []schemamodel.View{{Name: "T1_PKEY", Body: "SELECT 1 AS a"}},
+			},
+			want: `target view dbo\.T1_PKEY and constraint dbo\.t1_pkey on dbo\.t1 may have the same catalog identity`,
+		},
+		{
+			name: "an unnamed primary key on the column beside a procedure of its name",
+			desired: new(reportTable(reportProcedure("t1_pkey"), schemamodel.Table{Name: "t1"},
+				schemamodel.Field{Primary: true})),
+			want: `target procedure dbo\.t1_pkey and constraint dbo\.t1_pkey on dbo\.t1 are one name`,
+		},
+		{
+			name:    "an unnamed column check beside a procedure of its name",
+			desired: new(reportTable(reportProcedure("t1_n_check"), schemamodel.Table{Name: "t1"}, schemamodel.Field{Check: "n > 0"})),
+			want:    `target procedure dbo\.t1_n_check and constraint dbo\.t1_n_check on dbo\.t1 are one name`,
+		},
+		{
 			name: "a table-level constraint named as a sequence in its table's schema",
 			desired: &schemamodel.Database{
 				Tables:      []schemamodel.Table{{StructName: "T1", Schema: "sales", Name: "t1"}},
@@ -293,13 +332,39 @@ func TestValidateDesiredSchema_SQLServerConstraintsAndTriggersBesideOtherKinds_H
 			desired: reportView(reportTable(schemamodel.Database{}, schemamodel.Table{Schema: "sales", Name: "t1", PrimaryKeyName: "Report"}, schemamodel.Field{})),
 		},
 		{
-			// Ptah chose the name, and nobody named the key.
-			name:    "a derived foreign key name",
+			// The plan writes the declared name, not the one Ptah would
+			// derive for a key nobody named.
+			name:    "a named primary key beside a view of the derived name",
 			dialect: platform.SQLServer,
-			desired: reportView(reportTable(schemamodel.Database{
-				Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}},
-				Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "INT", Primary: true}},
-			}, schemamodel.Table{Name: "t1"}, schemamodel.Field{Foreign: "parent(id)", ForeignKeyName: "Report", ForeignKeyNameDerived: true})),
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}, PrimaryKeyName: "pk_t1"}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "INT", Primary: true}},
+				Views:  []schemamodel.View{{Name: "t1_pkey", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// A constraint is in the schema of its table.
+			name:    "an unnamed primary key beside a view of its name in another schema",
+			dialect: platform.SQLServer,
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Schema: "sales", Name: "t1", PrimaryKey: []string{"id"}}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "INT", Primary: true}},
+				Views:  []schemamodel.View{{Name: "t1_pkey", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// MySQL names every primary key PRIMARY and an unnamed check
+			// t1_chk_1, and keeps both apart from views.
+			name:    "a MySQL unnamed primary key and check beside views of the SQL Server names",
+			dialect: platform.MySQL,
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}}},
+				Fields: []schemamodel.Field{
+					{StructName: "T1", Name: "id", Type: "INT", Primary: true},
+					{StructName: "T1", Name: "n", Type: "INT", Check: "n > 0"},
+				},
+				Views: []schemamodel.View{{Name: "t1_pkey", Body: "SELECT 1 AS a"}, {Name: "t1_n_check", Body: "SELECT 1 AS a"}},
+			},
 		},
 		{
 			// MySQL keeps a constraint apart from views and routines.
@@ -406,6 +471,24 @@ func TestCompareWithDatabase_SQLServerCreatesBesideAKeptConstraintOrTrigger_Fail
 				`which it may read as one name; sqlserver keeps the constraints of every table in one namespace in a schema, ` +
 				`so the create would fail while the constraint exists; give the constraint another name, or rename or drop ` +
 				`the constraint first`,
+		},
+		{
+			// The renderer writes t2_pkey for the key of t2 nobody named.
+			name: "the unnamed primary key of a created table beside a key the database keeps under its name",
+			desired: func() *schemamodel.Database {
+				desired := unnamedReportKey()
+				desired.Views = nil
+				desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "T2", Name: "t2", PrimaryKey: []string{"id"}})
+				desired.Fields = append(desired.Fields, schemamodel.Field{StructName: "T2", Name: "id", Type: "INT", Primary: true})
+				return desired
+			}(),
+			held: func() *catalog.Database {
+				held := heldReportKey()
+				held.Constraints[0].Name = "T2_PKEY"
+				return held
+			}(),
+			want: `the plan creates constraint dbo\.t2_pkey on dbo\.t2, and the database keeps constraint dbo\.T2_PKEY on dbo\.t1, ` +
+				`which it may read as one name`,
 		},
 	}
 	for _, test := range tests {

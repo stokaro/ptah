@@ -159,7 +159,9 @@ const ConstraintNamingTableColumnsSuffix ConstraintNaming = "table-columns-suffi
 // that differs from one database to the next, `UQ__t__3BD0198F3A610101`, so no file can
 // name it later and a read cannot tell it from a declared one. A SQL schema file's unnamed
 // UNIQUE on the table takes `<table>_<columns>_key` instead and its unnamed CHECK
-// `<table>_<column>_check`, which the file then writes. SQL Server's naming.
+// `<table>_<column>_check`, which the file then writes. The renderer writes an unnamed
+// primary key as `<table>_pkey` and an unnamed column CHECK as `<table>_<column>_check`,
+// and the shared namespace check compares those names. SQL Server's naming.
 const ConstraintNamingServerHash ConstraintNaming = "server-hash"
 
 // ForeignKeyNaming is how a server names a foreign key a schema file leaves

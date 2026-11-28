@@ -1384,8 +1384,9 @@ func collectIdentifierNames(
 	names := []string{defaultSchema}
 	names = appendGeneratedIdentifierNames(names, desired)
 	names = appendDatabaseIdentifierNames(names, database)
-	names = appendDeclaredObjectNames(names, desired)
+	names = appendDeclaredObjectNames(names, desired, dialect)
 	names = appendHeldObjectNames(names, database)
+	names = append(names, identifiervalidation.HeldDerivedConstraintNames(database, dialect)...)
 	names = appendRoleNames(names, desired, database, dialect)
 	return appendSequenceReferenceNames(names, desired, database, dialect)
 }
@@ -1450,8 +1451,8 @@ func appendRoleNames(names []string, desired *schemamodel.Database, database *ca
 // the plan creates the one and drops the other, and on a case-insensitive SQL
 // Server database the drop removes the procedure the create has just changed
 // (stokaro/ptah#6722).
-func appendDeclaredObjectNames(names []string, desired *schemamodel.Database) []string {
-	return append(names, identifiervalidation.ObjectNames(desired)...)
+func appendDeclaredObjectNames(names []string, desired *schemamodel.Database, dialect string) []string {
+	return append(names, identifiervalidation.ObjectNames(desired, dialect)...)
 }
 
 // appendHeldObjectNames is [appendDeclaredObjectNames] for the objects the

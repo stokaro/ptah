@@ -216,7 +216,7 @@ func sqlServerCollatedSequenceDefault(c *qt.C, semantics identifier.Semantics) *
 func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseInsensitive(t *testing.T) {
 	c := qt.New(t)
 	semantics := resolvedSQLServerSemantics("SQL_Latin1_General_CP1_CI_AS",
-		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S", "s"})
+		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S", "s"}, []string{"things_pkey"})
 
 	diff := sqlServerCollatedSequenceDefault(c, semantics)
 
@@ -229,7 +229,7 @@ func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseInsensitive(t *testi
 func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseSensitive(t *testing.T) {
 	c := qt.New(t)
 	semantics := resolvedSQLServerSemantics("Latin1_General_CS_AS",
-		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S"}, []string{"s"})
+		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S"}, []string{"s"}, []string{"things_pkey"})
 
 	diff := sqlServerCollatedSequenceDefault(c, semantics)
 

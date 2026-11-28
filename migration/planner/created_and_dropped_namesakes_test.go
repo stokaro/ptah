@@ -396,6 +396,21 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				"both kinds in one namespace in a schema, where the two are one name",
 		},
 		{
+			// The renderer writes t1_pkey for a key nobody named.
+			name:    "the unnamed primary key of a created table in place of a view",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded: difftypes.TableChanges{{
+					Name:   "t1",
+					Table:  schemamodel.Table{Name: "t1", PrimaryKey: []string{"id"}},
+					Fields: []schemamodel.Field{{Name: "id", Type: "INT", Primary: true}},
+				}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.t1_pkey", Body: "SELECT 1 AS x"}},
+			},
+			want: "the plan creates constraint dbo.t1_pkey on dbo.t1 and drops view dbo.t1_pkey, and sqlserver keeps " +
+				"both kinds in one namespace in a schema, where the two are one name",
+		},
+		{
 			name:    "a trigger added in place of a view",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
@@ -691,6 +706,19 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			diff: difftypes.SchemaDiff{
 				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "UQ_N", TableName: "dbo.t1", Type: "UNIQUE", Columns: []string{"n"}}},
 				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "UQ_n", TableName: "dbo.t1", Type: "UNIQUE"}},
+			},
+		},
+		{
+			// MySQL names the key PRIMARY, so t1_pkey is no key's name.
+			name:    "a MySQL unnamed primary key of a created table in place of a view",
+			dialect: platform.MySQL,
+			diff: difftypes.SchemaDiff{
+				TablesAdded: difftypes.TableChanges{{
+					Name:   "t1",
+					Table:  schemamodel.Table{Name: "t1", PrimaryKey: []string{"id"}},
+					Fields: []schemamodel.Field{{Name: "id", Type: "INT", Primary: true}},
+				}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "t1_pkey", Body: "SELECT 1 AS x"}},
 			},
 		},
 		{

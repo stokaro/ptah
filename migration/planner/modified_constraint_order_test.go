@@ -199,6 +199,7 @@ func connectionSemantics(dialect, schema string) identifier.Semantics {
 				{Name: "id", Key: "id"}, {Name: "tenant", Key: "tenant"},
 				{Name: "code", Key: "code"},
 				{Name: "uq_widget_scope", Key: "uq_widget_scope"},
+				{Name: "widget_pkey", Key: "widget_pkey"},
 			})
 	}
 	semantics := identifier.ForDialect(dialect)

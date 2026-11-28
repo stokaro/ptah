@@ -420,9 +420,13 @@ the database may read as one is refused and names both objects, such as the
 view `dbo.Report` and the procedure `dbo.REPORT` under a case-insensitive
 collation, the function `dbo.x` and the procedure `dbo.x` under any
 collation, the view `dbo.REPORT` and the primary key `Report` of `dbo.t1`, or
-the primary keys `pk` of `dbo.t1` and `dbo.t2`. A constraint the declaration
-leaves unnamed takes a name the server makes up, and a foreign key name Ptah
-derives is not compared either.
+the primary keys `pk` of `dbo.t1` and `dbo.t2`.
+
+A constraint the declaration leaves unnamed is compared under the name Ptah
+writes for it: `t1_pkey` for the primary key of `t1`, `t1_n_check` for a
+`CHECK` on its column `n`, and the foreign key name Ptah derives, such as
+`fk_t1_n`. So the view `dbo.t1_pkey` beside a table `dbo.t1` whose primary key
+nobody named is refused too.
 
 A constraint the database holds is compared too, because a declaration that
 leaves the constraint unnamed keeps the name the database holds it under. On a

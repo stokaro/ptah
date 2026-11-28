@@ -314,7 +314,7 @@ func schemaPreconditionSemantics(dialect, home string) identifier.Semantics {
 				{Name: "dbo", Key: "dbo"}, {Name: "extra", Key: "extra"},
 				{Name: "widget", Key: "widget"}, {Name: "id", Key: "id"},
 				{Name: "v1", Key: "v1"}, {Name: "s1", Key: "s1"},
-				{Name: "ptah_flag", Key: "ptah_flag"},
+				{Name: "ptah_flag", Key: "ptah_flag"}, {Name: "widget_pkey", Key: "widget_pkey"},
 			})
 	}
 	semantics := identifier.ForDialect(dialect)

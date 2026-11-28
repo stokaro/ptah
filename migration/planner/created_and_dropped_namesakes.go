@@ -465,7 +465,7 @@ func hostedNamesakeKinds(diff *difftypes.SchemaDiff, rules identifier.Semantics,
 		return planned
 	}
 	constraints := namesakeKind{shared: namespace.Constraints, droppedLast: true, loss: lostObject}
-	for _, created := range identifiervalidation.CreatedConstraints(diff) {
+	for _, created := range identifiervalidation.CreatedConstraints(diff, described.Name) {
 		constraints.created = append(constraints.created, hosted("constraint", created))
 	}
 	for _, removed := range diff.ConstraintsRemoved {

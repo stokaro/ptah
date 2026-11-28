@@ -108,7 +108,7 @@ func refuseCreatesBesideKeptNamesakes(diff *difftypes.SchemaDiff, current *catal
 			created = append(created, hosted("trigger", identifiervalidation.HostedTrigger(trigger.TriggerName, trigger.TableName)))
 		}
 	}
-	for _, constraint := range identifiervalidation.CreatedConstraints(diff) {
+	for _, constraint := range identifiervalidation.CreatedConstraints(diff, target) {
 		created = append(created, hosted("constraint", constraint))
 	}
 	for _, making := range created {
