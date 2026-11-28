@@ -45,7 +45,7 @@ func ValidateTarget(
 	}
 	if err := ValidateCoverage(
 		semantics,
-		targetIdentifierNames(desired, semantics.DefaultSchema),
+		targetIdentifierNames(desired, semantics.DefaultSchema, dialect),
 	); err != nil {
 		return err
 	}
@@ -90,14 +90,15 @@ func validateRoles(desired *schemamodel.Database, dialect string, semantics iden
 
 // ObjectNames lists the names of the views, materialized views, routines,
 // sequences and triggers desired declares, with the table each trigger is on,
-// and the names of the constraints it declares ([DeclaredConstraints]). A
+// and the names of the constraints it declares on dialect
+// ([DeclaredConstraints]). A
 // schema-qualified name contributes its schema and its name, each without its
 // quotes. A nil desired lists nothing.
 //
 // It is the one list of these names. The comparison asks a server how it
 // compares them, and [ValidateTarget] checks that the server was asked about
 // every one, so the two cannot disagree about which names those are.
-func ObjectNames(desired *schemamodel.Database) []string {
+func ObjectNames(desired *schemamodel.Database, dialect string) []string {
 	if desired == nil {
 		return nil
 	}
@@ -121,7 +122,7 @@ func ObjectNames(desired *schemamodel.Database) []string {
 		names = appendQualifiedIdentifier(names, trigger.Table)
 		names = appendQualifiedIdentifier(names, trigger.Name)
 	}
-	for _, constraint := range DeclaredConstraints(desired) {
+	for _, constraint := range DeclaredConstraints(desired, dialect) {
 		names = append(names, constraint.Name)
 	}
 	return names
@@ -129,7 +130,7 @@ func ObjectNames(desired *schemamodel.Database) []string {
 
 func targetIdentifierNames(
 	desired *schemamodel.Database,
-	defaultSchema string,
+	defaultSchema, dialect string,
 ) []string {
 	names := []string{defaultSchema}
 	for _, field := range desired.Fields {
@@ -150,7 +151,7 @@ func targetIdentifierNames(
 			names = append(names, part.Name)
 		}
 	}
-	return append(names, ObjectNames(desired)...)
+	return append(names, ObjectNames(desired, dialect)...)
 }
 
 func appendQualifiedIdentifier(names []string, value string) []string {
@@ -372,7 +373,7 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 	for _, sequence := range desired.Sequences {
 		add(namespace.Sequences, "sequence", sequence.QualifiedName())
 	}
-	for _, constraint := range DeclaredConstraints(desired) {
+	for _, constraint := range DeclaredConstraints(desired, dialect) {
 		hosted(namespace.Constraints, "constraint", constraint)
 	}
 	for _, trigger := range desired.Triggers {

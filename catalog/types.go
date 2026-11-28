@@ -194,6 +194,16 @@ type Database struct {
 	// rendered. Only Roles reaches output.
 	RolesOutOfScope []Role `json:"-"`
 
+	// SchemasOutOfScope names the schemas the database holds beyond the ones
+	// this read covers, on a reader that lists them, sorted by name: a SQL
+	// Server read, whose scope is one schema, lists the user schemas of its
+	// database and dbo. Nil means the reader does not establish them, and an
+	// empty non-nil slice means it listed them and found none. A diff that
+	// read one schema reads it to say whether a schema it did not read exists.
+	// It is a fact about the read rather than part of the description, so it
+	// is never serialized.
+	SchemasOutOfScope []string `json:"-"`
+
 	// RolesOutOfScopeReason is why the reader left RolesOutOfScope out of the
 	// description, in that reader's words: a clause that completes
 	// "because", which names no role. It is empty where the reader states no
@@ -1346,6 +1356,18 @@ type ServerInfo struct {
 	// default schema, and a history kept in one account's default schema reads
 	// as empty to the other, which then runs every migration again.
 	MetadataSchema string `json:"metadata_schema,omitempty"`
+	// UnqualifiedSchema is the schema the server creates a name written
+	// without a schema in, where that is not Schema, and empty where it is.
+	//
+	// On SQL Server, a URL's schema parameter selects Schema, the schema a
+	// connection reads and compares, while the server creates an unqualified
+	// name in the default schema of the connection's user, which no session
+	// setting changes. Where the parameter names another schema, a plan
+	// would create such a name in this one and the next run would compare
+	// it in Schema again, so a comparison refuses a declaration that writes
+	// a name without a schema, and a rehearsal refuses a dev database that
+	// would create such a name in another schema than the target does.
+	UnqualifiedSchema string `json:"unqualified_schema,omitempty"`
 
 	// WholeServer reports a connection to a whole MySQL or MariaDB server:
 	// one opened from a URL that names no database, which

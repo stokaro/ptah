@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -633,15 +634,33 @@ func withDevRoleHint(err error, baseline devclean.Baseline) error {
 // names on the dev session as the target does; see [resolveNamesAsTarget]. A
 // URL that pins a schema claims that schema alone, and the plan's unqualified
 // names would land in another one, so that pair is refused.
+//
+// A pair that reads one schema is refused too where the two servers create an
+// unqualified name in different schemas ([catalog.ServerInfo.UnqualifiedSchema]):
+// on SQL Server, a dev URL naming schema=app as sa reads app but creates the
+// plan's CREATE TABLE [t1] in dbo, while a target account whose default schema
+// is app creates it in app, so the rehearsal would not run the plan as the
+// target does.
 func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo, names urlname.Names) error {
 	if schemaScopeNamesDatabase(targetInfo.Dialect) {
 		return nil
 	}
-	if devInfo.Schema == targetInfo.Schema || realmPairResolvesApart(devInfo, targetInfo) {
+	if realmPairResolvesApart(devInfo, targetInfo) {
 		return nil
 	}
-	return fmt.Errorf("%s does not match %s; point %s at a dev database using the same schema",
-		names.DevSource().Attribute("schema scope", devInfo.Schema), names.TargetSource().Attribute("schema scope", targetInfo.Schema), names.DevSource())
+	if devInfo.Schema != targetInfo.Schema {
+		return fmt.Errorf("%s does not match %s; point %s at a dev database using the same schema",
+			names.DevSource().Attribute("schema scope", devInfo.Schema), names.TargetSource().Attribute("schema scope", targetInfo.Schema), names.DevSource())
+	}
+	devUnqualified := cmp.Or(devInfo.UnqualifiedSchema, devInfo.Schema)
+	targetUnqualified := cmp.Or(targetInfo.UnqualifiedSchema, targetInfo.Schema)
+	if devUnqualified != targetUnqualified {
+		return fmt.Errorf("%s does not match %s; give %s a user whose default schema is %q",
+			names.DevSource().Attribute("default schema", devUnqualified),
+			names.TargetSource().Attribute("default schema", targetUnqualified),
+			names.DevSource(), targetUnqualified)
+	}
+	return nil
 }
 
 // resolveNamesAsTarget returns devConn, a pinned dev session, resolving

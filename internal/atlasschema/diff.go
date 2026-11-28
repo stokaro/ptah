@@ -966,10 +966,14 @@ type oneSchemaRead struct {
 }
 
 // oneSchemaReads names each database side of a diff read at one schema of a
-// database that may hold others, on an engine whose desired state declares
+// database that holds others, on an engine whose desired state declares
 // schemas ([descriptor.Comparison.DeclaredSchemas]) but whose URL selects no
 // scope wider than one schema ([descriptor.Schemas.Selection] unset), when the
-// run named no schemas. SQL Server is such an engine: a URL is read at the
+// run named no schemas. A side whose read found no other schema
+// ([catalog.Database.SchemasOutOfScope] empty) is left out: the note would
+// send the operator to schemas the database does not have, and every object
+// the other side declares elsewhere is absent from it indeed. A read that did
+// not list them keeps the note. SQL Server is such an engine: a URL is read at the
 // schema its schema parameter names, or else at the default schema of the
 // connection's user, and the other schemas of the database are not compared.
 // Measured on SQL Server 2025, a --from database holding app.t1 beside a --to
@@ -990,6 +994,9 @@ func oneSchemaReads(dialect string, requested []string, fromState, toState atlas
 	} {
 		state := side.state
 		if state.Kind != atlassource.KindDatabase || state.RealmScoped || state.WholeServer || state.DefaultSchema == "" {
+			continue
+		}
+		if state.DB != nil && state.DB.SchemasOutOfScope != nil && len(state.DB.SchemasOutOfScope) == 0 {
 			continue
 		}
 		read := oneSchemaRead{side: side.name, other: side.otherName, schema: state.DefaultSchema}

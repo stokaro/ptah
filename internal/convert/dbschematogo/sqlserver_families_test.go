@@ -116,6 +116,7 @@ var unconvertedFamilies = map[string]string{
 	"WideAccess":                "read for the security analysis's reach rules rather than as a declarable object",
 	"WideGrants":                "read to refuse a table revoke a wider grant keeps, rather than as a declarable object",
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
+	"SchemasOutOfScope":         "a report about the schemas the read did not cover, not an object",
 	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
 	"UnreadTables":              "tables the read found and does not describe, which no declaration names",
 	"UnreadRoles":               "principals whose privileges the read did not read, which only the reach rules read",

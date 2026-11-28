@@ -94,11 +94,9 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{}
 
-	schemas, err := r.readSchemas(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read schemas: %w", err)
+	if err := r.recordSchemas(ctx, schema); err != nil {
+		return nil, err
 	}
-	schema.Schemas = schemas
 
 	tables, err := r.readTables(ctx)
 	if err != nil {
@@ -193,6 +191,22 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	return schema, nil
 }
 
+// recordSchemas records the schemas the read covers in schema, and the user
+// schemas it leaves out.
+func (r *Reader) recordSchemas(ctx context.Context, schema *catalog.Database) error {
+	schemas, err := r.readSchemas(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read schemas: %w", err)
+	}
+	schema.Schemas = schemas
+	outside, err := r.readSchemasOutOfScope(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read schemas outside the read: %w", err)
+	}
+	schema.SchemasOutOfScope = outside
+	return nil
+}
+
 // recordFunctions reads the database's functions and procedures into schema,
 // and claims the principal each one runs as is read: a routine the read gives
 // no principal runs as its caller or its owner.
@@ -245,6 +259,38 @@ func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 		return nil, err
 	}
 	return schemas, nil
+}
+
+// readSchemasOutOfScope reads the schemas the database holds beyond the read's
+// scope that can hold a user's objects, sorted by name, and an empty non-nil
+// slice where there are none: dbo, and every schema a user created. The other
+// schemas every database holds are left out: guest, INFORMATION_SCHEMA and
+// sys, and the schema of each fixed database role, whose ID is 16384 or more.
+func (r *Reader) readSchemasOutOfScope(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT s.name
+		FROM sys.schemas AS s
+		WHERE (s.schema_id = 1 OR s.schema_id BETWEEN 5 AND 16383)
+		  AND NOT (` + schemaPredicatePlaceholder + `)
+		ORDER BY s.name`
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {

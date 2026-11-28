@@ -48,13 +48,46 @@ read as `dbo`'s:
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
 ```
 
+The parameter does not change where the server creates a name written
+without a schema: that stays the default schema of the connection's user. A
+URL whose `schema` parameter names another schema reads that schema, so Ptah
+refuses a desired schema that writes a table, a view, a routine or a sequence
+without a schema through it, naming each name and both schemas. Qualify the
+names, or leave the parameter out for a user whose default schema is the one
+to read.
+
+A dev database works in a schema by the same rule, and a rehearsal needs the
+dev database to read the target's schema and to create an unqualified name
+where the target does. A dev URL that logs in as `sa` works in `dbo`, so
+beside a target whose account works in `app` it is refused with
+`--dev-url schema scope "dbo" does not match --db-url schema scope "app"`.
+Adding `schema=app` to that dev URL makes it read `app`, while `sa` still
+creates unqualified names in `dbo`, so it is refused with
+`--dev-url default schema "dbo" does not match --db-url default schema "app"`.
+Log in to the dev database as a user whose default schema is `app`.
+
 Ptah keeps its own tables in the schema the `schema` parameter names, or else
 in `dbo`, whatever the default schema of the connection's user is: the
 migration history with its log, tags and repeatable record, and the schema
 apply log. A database migrated as `sa` keeps its history in `dbo`, and an
 account whose default schema is `app` reads that history, so it does not run
 the migrations again. `--migrations-schema` takes precedence for the migration
-history.
+history, and `ptah migrations status` prints the schema it reads the history
+from.
+
+A run that names no schema refuses to start when `dbo` holds no revision table
+and the default schema of the connection's user holds one, as it does after an
+account whose default schema is `app` migrated through `--migrations-schema app`
+or `schema=app`: reading the empty `dbo` would apply every migration again. The
+refusal names both schemas. Pass `--migrations-schema app` (`--revisions-schema
+app` in `ptah-compat`) or add `schema=app` to the URL to keep the history where
+it is, or move the migration tables into `dbo`.
+
+A user who cannot create a table in `dbo`, such as one outside `db_owner`,
+cannot start a history there, and the error names the same flag and parameter.
+Such a user keeps no schema apply log either: `ptah schema apply` warns for each
+entry it cannot write, and applies the plan. Add `schema=app` to the URL to keep
+the log in the user's schema.
 
 ## Supported surface
 
@@ -331,9 +364,9 @@ A routine is replaced in the schema the read found it in. The `DROP` and the
 `CREATE` both put the declared name in that schema. A routine the schema
 declares without a schema is compared in the connection's schema (see
 [Connecting](#connecting)) and is replaced there. A URL whose
-`schema` parameter names a schema other than the user's default schema reads
-that schema, while the server still creates an unqualified name in the default
-schema, so leave the parameter out for such an account or qualify the names.
+`schema` parameter names a schema other than the user's default schema is
+refused for a routine declared without a schema (see
+[Connecting](#connecting)).
 
 A database side of `ptah schema diff` is read at that one schema. When the
 run names no `--schemas`, it says so on standard error, and names the schemas
@@ -387,9 +420,13 @@ the database may read as one is refused and names both objects, such as the
 view `dbo.Report` and the procedure `dbo.REPORT` under a case-insensitive
 collation, the function `dbo.x` and the procedure `dbo.x` under any
 collation, the view `dbo.REPORT` and the primary key `Report` of `dbo.t1`, or
-the primary keys `pk` of `dbo.t1` and `dbo.t2`. A constraint the declaration
-leaves unnamed takes a name the server makes up, and a foreign key name Ptah
-derives is not compared either.
+the primary keys `pk` of `dbo.t1` and `dbo.t2`.
+
+A constraint the declaration leaves unnamed is compared under the name Ptah
+writes for it: `t1_pkey` for the primary key of `t1`, `t1_n_check` for a
+`CHECK` on its column `n`, and the foreign key name Ptah derives, such as
+`fk_t1_n`. So the view `dbo.t1_pkey` beside a table `dbo.t1` whose primary key
+nobody named is refused too.
 
 A constraint the database holds is compared too, because a declaration that
 leaves the constraint unnamed keeps the name the database holds it under. On a
@@ -490,6 +527,14 @@ and creates there the roles the target holds. The cleanup after the rehearsal
 drops each role the dev database did not hold when the run began, with its
 memberships, so no role outlives the run. A dev database that holds a role of
 its own is refused, because the cleanup cannot tell whose the role is.
+
+A `GRANT`, `DENY` or `REVOKE` runs on the dev database when every principal it
+names after `TO` or `FROM` is a role the run created. Dropping a role removes
+every permission granted or denied to it, so these leave nothing behind
+either. One that names `public`, `dbo`, `guest`, a fixed database role or the
+user the dev URL logs in as is refused, since that principal outlives the
+run. So is `AS` on a `GRANT` or a `DENY`: it makes another principal the
+grantor, and SQL Server cannot drop a role that has granted a permission.
 `ALTER ROLE`, an application role and a user stay refused on a dev database:
 each can reach a principal the run did not create.
 

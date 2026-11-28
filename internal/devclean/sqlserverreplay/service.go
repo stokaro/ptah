@@ -43,11 +43,13 @@ func Services() []replay.Service {
 // nothing.
 type guard struct {
 	database  string
+	user      string
 	databases *reachedDatabases
 }
 
-// databaseQuery reads the database the dev session is in.
-const databaseQuery = "SELECT DB_NAME()"
+// sessionQuery reads the database the dev session is in, and the session's
+// database user.
+const sessionQuery = "SELECT DB_NAME(), COALESCE(USER_NAME(), N'')"
 
 // databaseAccessQuery asks whether the dev session reaches a database of the
 // name @p1: HAS_DBACCESS answers 1 when the session's login may use it, 0
@@ -59,10 +61,12 @@ const databaseQuery = "SELECT DB_NAME()"
 // and HAS_DBACCESS returns 1 (measured on SQL Server 2022 and 2025).
 const databaseAccessQuery = "SELECT HAS_DBACCESS(@p1)"
 
-// ValidateSession reads the database the dev session is in, and returns the
-// guard that takes a name of that database for a local one and asks the
-// session about the database part of every other name; see
-// [guard.localName]. It refuses no session. The database is read under trust
+// ValidateSession reads the database the dev session is in and the session's
+// database user, and returns the guard that takes a name of that database for
+// a local one and asks the session about the database part of every other
+// name; see [guard.localName]. The user is a principal that outlives the run,
+// so a permission change naming it is refused; see
+// [guard.confinedPermissionChange]. It refuses no session. The database is read under trust
 // too, where the guard does not use it, so that every run reads the session the
 // same way; a trusted run asks no question about a name.
 //
@@ -76,9 +80,9 @@ const databaseAccessQuery = "SELECT HAS_DBACCESS(@p1)"
 // each run, on the run's context, and validates the run's statements with the
 // guard it gets back.
 func (guard) ValidateSession(ctx context.Context, session replay.Session, _ replay.Scope) (replay.Guard, error) {
-	var database string
-	if err := session.QueryRowContext(ctx, databaseQuery).Scan(&database); err != nil {
-		return nil, fmt.Errorf("read the database of the dev session: %w", err)
+	var database, user string
+	if err := session.QueryRowContext(ctx, sessionQuery).Scan(&database, &user); err != nil {
+		return nil, fmt.Errorf("read the database and the user of the dev session: %w", err)
 	}
 	ask := func(name string) (bool, error) {
 		var access sql.NullInt64
@@ -87,7 +91,7 @@ func (guard) ValidateSession(ctx context.Context, session replay.Session, _ repl
 		}
 		return access.Valid && access.Int64 == 1, nil
 	}
-	return guard{database: database, databases: &reachedDatabases{ask: ask, answers: make(map[string]bool)}}, nil
+	return guard{database: database, user: user, databases: &reachedDatabases{ask: ask, answers: make(map[string]bool)}}, nil
 }
 
 // reachedDatabases answers whether the dev session reaches a database of a

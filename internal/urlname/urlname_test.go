@@ -9,8 +9,8 @@ import (
 )
 
 // TestNames_HappyPath names each URL by where the run took it from. The zero
-// value writes the Atlas CLI's flag names, which the compatibility surface
-// depends on for byte-identical wording.
+// value writes the Atlas CLI's flag names, the ones the compatibility surface
+// reads.
 func TestNames_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string

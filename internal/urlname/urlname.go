@@ -4,9 +4,10 @@
 // A command reads each URL from a flag, from the flag's PTAH_* variable, or
 // from the project file, and an error that names a flag the operator never
 // typed sends them to the wrong place. The zero [Names] names the URLs --url
-// and --dev-url, the Atlas CLI's flags, so the compatibility surface writes
-// the community binary's wording; a native command passes its own flag names
-// and says when the project file gave the dev URL.
+// and --dev-url, the Atlas CLI's flags, which the compatibility surface reads;
+// a native command passes its own flag names and says when the project file
+// gave the dev URL. The sentences around the flag names are Ptah's own; the
+// community binary does not print them.
 package urlname
 
 import "fmt"
@@ -89,7 +90,7 @@ func (n Names) DevSource() Source {
 }
 
 // DialectMismatch is the refusal of a dev database of devDialect for a target
-// of targetDialect. The zero value writes the community binary's wording,
+// of targetDialect. The zero value names the compatibility surface's flags,
 // `--dev-url dialect "x" does not match --url dialect "y"`.
 func (n Names) DialectMismatch(devDialect, targetDialect string) error {
 	return fmt.Errorf("%s does not match %s",

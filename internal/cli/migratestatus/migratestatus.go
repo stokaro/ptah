@@ -4,6 +4,7 @@
 package migratestatus
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -481,7 +482,9 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	emit.Println("=== MIGRATION STATUS ===")
 	emit.Printf("Database: %s\n", dburldisplay.Format("***"))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
-	emit.Printf("Schema: %s\n", conn.Info().Schema)
+	// The schema the history is read from, which on SQL Server is dbo or the
+	// URL's schema parameter whatever schema the account works in.
+	emit.Printf("Schema: %s\n", cmp.Or(mig.MigrationsSchema(), conn.Info().Schema))
 	emit.Println()
 
 	emit.Printf("Current Version: %s\n", mig.VersionLabel(status.CurrentVersion))

@@ -83,6 +83,10 @@ func sqlServerCascadeCycleSemantics() identifier.Semantics {
 			{Name: "id", Key: "id"},
 			{Name: "left_id", Key: "left_id"},
 			{Name: "right_id", Key: "right_id"},
+			{Name: "left_nodes_pkey", Key: "left_nodes_pkey"},
+			{Name: "right_nodes_pkey", Key: "right_nodes_pkey"},
+			{Name: "fk_left_nodes_right_id", Key: "fk_left_nodes_right_id"},
+			{Name: "fk_right_nodes_left_id", Key: "fk_right_nodes_left_id"},
 		})
 }
 

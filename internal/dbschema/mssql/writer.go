@@ -1195,7 +1195,7 @@ const unsupportedRealmArtifactQuery = `
 				ON member_principal.principal_id = membership.member_principal_id
 			WHERE NOT (
 				role_principal.name = N'db_owner'
-				AND member_principal.principal_id = DATABASE_PRINCIPAL_ID()
+				AND member_principal.principal_id IN (1, DATABASE_PRINCIPAL_ID())
 			)
 
 			UNION ALL

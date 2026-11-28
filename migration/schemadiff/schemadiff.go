@@ -466,6 +466,9 @@ func validateDeclaredBeforeComparison(
 	if desired == nil {
 		return nil
 	}
+	if err := validateUnqualifiedNames(desired, info); err != nil {
+		return err
+	}
 	// The server's own default schema, where a bare table name lands: a
 	// search path set to another schema makes `accounts` and
 	// `public.accounts` two tables, and the static default would call them one.

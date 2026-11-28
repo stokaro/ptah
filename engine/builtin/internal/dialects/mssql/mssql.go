@@ -2,11 +2,8 @@
 package mssql
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
-	"unicode/utf16"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -17,6 +14,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlserverexec"
+	"ptah.run/internal/sqlservername"
 	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/triggerdef"
 )
@@ -144,52 +142,10 @@ func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
 	return &named
 }
 
-// maxIdentifierLength is the longest name SQL Server takes, in UTF-16 code units: a sysname
-// is an nvarchar(128). Msg 103 answers a longer one.
-const maxIdentifierLength = 128
-
-// primaryKeySuffix ends the name of a primary key nobody named.
-const primaryKeySuffix = "_pkey"
-
-// primaryKeyName is the name a primary key nobody named goes by.
-//
-// SQL Server names an unnamed key itself, `PK__orders__3213E83F2B3A1E5C`, and the hash
-// differs from one database to the next. A later file that drops the key names the one
-// the dev database held, and another database answers `'PK__...' is not a constraint`.
-// Under a name the file chose, it runs on any database the file built.
-//
-// A table's name can leave no room for the suffix. Leaving that key to the server would
-// bring the failure back, so its name is the table's cut short, with a hash of the whole
-// name, which keeps two long names that start alike apart.
+// primaryKeyName is the name a primary key nobody named goes by on table,
+// as [sqlservername.PrimaryKey] derives it from the table's bare name.
 func primaryKeyName(table string) string {
-	leaf := unquoteIdentifier(tableLeafName(table))
-	if identifierLength(leaf)+len(primaryKeySuffix) <= maxIdentifierLength {
-		return leaf + primaryKeySuffix
-	}
-	sum := sha256.Sum256([]byte(leaf))
-	tail := "_" + hex.EncodeToString(sum[:4]) + primaryKeySuffix
-	return cutIdentifier(leaf, maxIdentifierLength-len(tail)) + tail
-}
-
-// identifierLength is a name's length as SQL Server counts it.
-func identifierLength(name string) int {
-	length := 0
-	for _, r := range name {
-		length += max(utf16.RuneLen(r), 1)
-	}
-	return length
-}
-
-// cutIdentifier is the longest start of name that SQL Server counts as limit or fewer.
-func cutIdentifier(name string, limit int) string {
-	length := 0
-	for at, r := range name {
-		length += max(utf16.RuneLen(r), 1)
-		if length > limit {
-			return name[:at]
-		}
-	}
-	return name
+	return sqlservername.PrimaryKey(unquoteIdentifier(tableLeafName(table)))
 }
 
 // namedKey gives an unnamed primary key its name.

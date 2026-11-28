@@ -16,9 +16,10 @@ import (
 )
 
 // describeAnswers is a server whose connection's user has defaultSchema as
-// its default schema; nil answers NULL. A non-nil schemaErr is what the server
-// answers when asked for it instead.
-func describeAnswers(defaultSchema driver.Value, schemaErr error) dbtest.QueryHandler {
+// its default schema, nil answering NULL, and which answers namedIsDefault
+// when asked whether the schema the URL names is that one. A non-nil
+// schemaErr is what the server answers when asked for them instead.
+func describeAnswers(defaultSchema, namedIsDefault driver.Value, schemaErr error) dbtest.QueryHandler {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
 		case strings.Contains(query, "@@VERSION"):
@@ -26,7 +27,7 @@ func describeAnswers(defaultSchema driver.Value, schemaErr error) dbtest.QueryHa
 		case strings.Contains(query, "CATALOG_DEFAULT"):
 			return dbtest.QueryResult{Columns: []string{"collation"}, Rows: [][]driver.Value{{"SQL_Latin1_General_CP1_CI_AS"}}}, nil
 		case strings.Contains(query, "SCHEMA_NAME()"):
-			return dbtest.QueryResult{Columns: []string{"schema"}, Rows: [][]driver.Value{{defaultSchema}}}, schemaErr
+			return dbtest.QueryResult{Columns: []string{"schema", "named_is_default"}, Rows: [][]driver.Value{{defaultSchema, namedIsDefault}}}, schemaErr
 		}
 		return dbtest.QueryResult{}, errors.New("unexpected query: " + query)
 	}
@@ -41,23 +42,32 @@ func describeAnswers(defaultSchema driver.Value, schemaErr error) dbtest.QueryHa
 // schema the URL names, or else dbo, whatever the user's default schema is.
 // A database migrated as sa keeps its history in dbo, and a user whose default
 // schema is app must read that history rather than an empty one in app.
+//
+// And it pins the schema the server creates an unqualified name in, where a
+// URL names another one than the user's default schema, as the server
+// compares the two: empty where there is no parameter or it names that
+// schema.
 func TestDescribe_Schema_HappyPath(t *testing.T) {
 	tests := []struct {
-		name          string
-		url           string
-		defaultSchema driver.Value
-		want          string
-		wantMetadata  string
+		name            string
+		url             string
+		defaultSchema   driver.Value
+		namedIsDefault  bool
+		want            string
+		wantMetadata    string
+		wantUnqualified string
 	}{
-		{"the user's default schema", "sqlserver://app@db:1433?database=shop", "app", "app", "dbo"},
-		{"dbo for a database owner", "sqlserver://sa@db:1433?database=shop", "dbo", "dbo", "dbo"},
-		{"dbo where the server answers none", "sqlserver://sa@db:1433?database=shop", nil, "dbo", "dbo"},
-		{"the schema the URL names", "sqlserver://app@db:1433?database=shop&schema=sales", "app", "sales", "sales"},
+		{"the user's default schema", "sqlserver://app@db:1433?database=shop", "app", false, "app", "dbo", ""},
+		{"dbo for a database owner", "sqlserver://sa@db:1433?database=shop", "dbo", false, "dbo", "dbo", ""},
+		{"dbo where the server answers none", "sqlserver://sa@db:1433?database=shop", nil, false, "dbo", "dbo", ""},
+		{"the schema the URL names", "sqlserver://app@db:1433?database=shop&schema=sales", "app", false, "sales", "sales", "app"},
+		{"dbo the URL names for a user with none", "sqlserver://sa@db:1433?database=shop&schema=sales", nil, false, "sales", "sales", "dbo"},
+		{"the user's default schema the URL names", "sqlserver://app@db:1433?database=shop&schema=APP", "app", true, "APP", "APP", ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(c, describeAnswers(test.defaultSchema, nil))
+			db := dbtest.Open(c, describeAnswers(test.defaultSchema, test.namedIsDefault, nil))
 			parsed, err := url.Parse(test.url)
 			c.Assert(err, qt.IsNil)
 
@@ -67,6 +77,7 @@ func TestDescribe_Schema_HappyPath(t *testing.T) {
 			c.Assert(info.Schema, qt.Equals, test.want)
 			c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, test.want)
 			c.Assert(info.MetadataSchema, qt.Equals, test.wantMetadata)
+			c.Assert(info.UnqualifiedSchema, qt.Equals, test.wantUnqualified)
 		})
 	}
 }
@@ -76,7 +87,7 @@ func TestDescribe_Schema_HappyPath(t *testing.T) {
 // plan would be compared in a schema its names do not land in.
 func TestDescribe_Schema_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(c, describeAnswers("app", errors.New("permission denied")))
+	db := dbtest.Open(c, describeAnswers("app", false, errors.New("permission denied")))
 	parsed, err := url.Parse("sqlserver://app@db:1433?database=shop")
 	c.Assert(err, qt.IsNil)
 

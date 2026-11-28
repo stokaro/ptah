@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
@@ -19,6 +20,14 @@ import (
 // oneSchemaDatabase is a database side read at schema.
 func oneSchemaDatabase(schema string) atlassource.State {
 	return atlassource.State{Kind: atlassource.KindDatabase, DefaultSchema: schema}
+}
+
+// listedDatabase is a database side read at schema, whose read listed outside
+// as the schemas the database holds beyond it.
+func listedDatabase(schema string, outside []string) atlassource.State {
+	state := oneSchemaDatabase(schema)
+	state.DB = &catalog.Database{SchemasOutOfScope: outside}
+	return state
 }
 
 // declaringFile is a file side declaring a table in each of schemas.
@@ -48,6 +57,15 @@ func TestReportOneSchemaReads_HappyPath(t *testing.T) {
 			name: "a SQL Server database on the --to side", dialect: platform.SQLServer,
 			from: declaringFile(), to: oneSchemaDatabase("app"),
 			want: `Note: the --to database was read at schema "app" alone; pass --schemas to compare others.` + "\n",
+		},
+		{
+			name: "a SQL Server database holding another schema", dialect: platform.SQLServer,
+			from: listedDatabase("dbo", []string{"app"}), to: declaringFile("dbo"),
+			want: `Note: the --from database was read at schema "dbo" alone; pass --schemas to compare others.` + "\n",
+		},
+		{
+			name: "a SQL Server database holding no other schema", dialect: platform.SQLServer,
+			from: listedDatabase("dbo", make([]string, 0)), to: declaringFile("dbo", "app"),
 		},
 		{
 			name: "schemas the run names", dialect: platform.SQLServer, requested: []string{"dbo", "app"},

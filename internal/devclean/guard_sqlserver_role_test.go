@@ -57,7 +57,9 @@ func TestBaselineGuard_SQLServerDatabaseRole_HappyPath(t *testing.T) {
 // TestDevReplayGuard_SQLServerDatabaseRole_FailurePath pins the principal
 // statements a SQL Server rehearsal still refuses: every one where no cleanup
 // drops the run's roles, the drop of a role the claim found, a membership
-// change, an application role and a user.
+// change, an application role and a user, and a grant judged by a guard that
+// read no session and so cannot tell the session's user from a role the run
+// created.
 func TestDevReplayGuard_SQLServerDatabaseRole_FailurePath(t *testing.T) {
 	unlisted := func() replay.DatabaseRoleScope { return replay.DatabaseRoleScope{} }
 	tests := []struct {
@@ -80,6 +82,8 @@ func TestDevReplayGuard_SQLServerDatabaseRole_FailurePath(t *testing.T) {
 			`sqlserver migration replay rejects CREATE DATABASE PRINCIPAL because its effects cannot be confined to the disposable database realm.*`},
 		{"a user", claimedDatabaseRoles, `CREATE USER [app_user] WITHOUT LOGIN`,
 			`sqlserver migration replay rejects CREATE DATABASE PRINCIPAL because its effects cannot be confined to the disposable database realm.*`},
+		{"a grant read without the session's user", claimedDatabaseRoles, `GRANT SELECT ON [t1] TO [APP]`,
+			`sqlserver migration replay rejects permission mutation because its effects cannot be confined to the disposable database realm.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -17,7 +17,9 @@ import (
 // rehearsal on a dev database runs its CREATE ROLE, and the cleanup after the
 // rehearsal drops each role the claim of the dev database did not find. A
 // dev database that already held a role before the run is still refused: the
-// cleanup cannot tell whose the role is.
+// cleanup cannot tell whose the role is. A GRANT, DENY or REVOKE to a role the
+// run created is rehearsed too, since dropping the role removes every
+// permission granted or denied to it.
 
 // sqlServerHeldRoles reads the database roles beyond the fixed ones, by name.
 const sqlServerHeldRoles = "SELECT COALESCE(STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name), '') " +
@@ -90,4 +92,62 @@ func TestSchemaApplyRefusesADevDatabaseHoldingARoleOnSQLServerE2E(t *testing.T) 
 	c.Assert(heldColumns(c, target, sqlServerHeldRoles), qt.Equals, "")
 	c.Assert(heldColumns(c, target, sqlServerHeldTables), qt.Equals, "")
 	c.Assert(heldColumns(c, dev, sqlServerHeldRoles), qt.Equals, "PREEXISTING")
+}
+
+// sqlServerHeldPermissions reads the permissions held by database roles beyond
+// the fixed ones, as role:state permission object.
+const sqlServerHeldPermissions = "SELECT COALESCE(STRING_AGG(held, ',') WITHIN GROUP (ORDER BY held), '') FROM (" +
+	"SELECT CONVERT(nvarchar(400), CONCAT(d.name, ':', p.state_desc, ' ', p.permission_name, ' ', " +
+	"OBJECT_SCHEMA_NAME(p.major_id), '.', OBJECT_NAME(p.major_id))) COLLATE Latin1_General_BIN AS held " +
+	"FROM sys.database_permissions AS p JOIN sys.database_principals AS d ON d.principal_id = p.grantee_principal_id " +
+	"WHERE d.type = 'R' AND d.is_fixed_role = 0 AND d.principal_id > 4) AS permissions"
+
+// TestSchemaApplyRehearsesGrantsToADatabaseRoleOnSQLServerE2E applies roles
+// with their grants and a deny twice: the first run grants on the dev database
+// through the plan, the second through the state of the target the rehearsal
+// recreates there, and then grants once more. Each run leaves the permissions
+// on the target, and no role and no permission on the dev database.
+func TestSchemaApplyRehearsesGrantsToADatabaseRoleOnSQLServerE2E(t *testing.T) {
+	c := qt.New(t)
+	target, dev := sqlServerRoleScratchDatabase(c), sqlServerRoleScratchDatabase(c)
+	const roles = "CREATE SCHEMA app;\nGO\nCREATE ROLE [APP];\nCREATE ROLE [App Readers];\n" +
+		"GRANT SELECT ON t1 TO [APP];\nGRANT SELECT, INSERT ON app.t2 TO [App Readers] WITH GRANT OPTION;\n" +
+		"DENY UPDATE ON t1 TO [App Readers];\n"
+
+	first := applyRoleSchema(c, target, dev,
+		"CREATE TABLE t1 (id INT NOT NULL);\nCREATE TABLE app.t2 (id INT NOT NULL);\n"+roles)
+
+	c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", first.Stdout, first.Stderr))
+	c.Assert(heldColumns(c, target, sqlServerHeldPermissions), qt.Equals,
+		"APP:GRANT SELECT dbo.t1,App Readers:DENY UPDATE dbo.t1,"+
+			"App Readers:GRANT_WITH_GRANT_OPTION INSERT app.t2,App Readers:GRANT_WITH_GRANT_OPTION SELECT app.t2")
+	c.Assert(heldColumns(c, dev, sqlServerHeldRoles), qt.Equals, "")
+	c.Assert(heldColumns(c, dev, sqlServerHeldPermissions), qt.Equals, "")
+
+	second := applyRoleSchema(c, target, dev,
+		"CREATE TABLE t1 (id INT NOT NULL, v INT NULL);\nCREATE TABLE app.t2 (id INT NOT NULL);\n"+roles+
+			"GRANT SELECT ON app.t2 TO [APP];\n")
+
+	c.Assert(second.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", second.Stdout, second.Stderr))
+	c.Assert(heldColumns(c, target, sqlServerHeldPermissions), qt.Equals,
+		"APP:GRANT SELECT app.t2,APP:GRANT SELECT dbo.t1,App Readers:DENY UPDATE dbo.t1,"+
+			"App Readers:GRANT_WITH_GRANT_OPTION INSERT app.t2,App Readers:GRANT_WITH_GRANT_OPTION SELECT app.t2")
+	c.Assert(heldColumns(c, dev, sqlServerHeldRoles), qt.Equals, "")
+	c.Assert(heldColumns(c, dev, sqlServerHeldPermissions), qt.Equals, "")
+}
+
+// TestSchemaApplyRefusesAGrantToPublicInARehearsalOnSQLServerE2E is the
+// control: public outlives the run, so a grant to it is not rehearsed, and the
+// run applies nothing.
+func TestSchemaApplyRefusesAGrantToPublicInARehearsalOnSQLServerE2E(t *testing.T) {
+	c := qt.New(t)
+	target, dev := sqlServerRoleScratchDatabase(c), sqlServerRoleScratchDatabase(c)
+
+	got := applyRoleSchema(c, target, dev,
+		"CREATE TABLE t1 (id INT NOT NULL);\nCREATE ROLE [APP];\nGRANT SELECT ON t1 TO [public];\n")
+
+	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains, "sqlserver migration replay rejects permission mutation")
+	c.Assert(heldColumns(c, target, sqlServerHeldRoles), qt.Equals, "")
+	c.Assert(heldColumns(c, target, sqlServerHeldTables), qt.Equals, "")
 }
