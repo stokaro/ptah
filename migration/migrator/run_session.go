@@ -18,8 +18,8 @@ import (
 // search_path` lands in the default one (stokaro/ptah#5034).
 //
 // Revision bookkeeping that runs on that session, as a transactional
-// migration's does, is qualified with the connection's schema, so a setting a
-// migration leaves cannot move it.
+// migration's does, is qualified with the schema the connection keeps the
+// migrator's tables in, so a setting a migration leaves cannot move it.
 //
 // A dry run executes nothing. An engine whose services ask for the pool's
 // sessions keeps them (see migratorext.Services.PoolSessions): SQLite, where a
@@ -52,7 +52,7 @@ func (m *Migrator) inRunSession(session *dbschema.DatabaseConnection) *Migrator 
 	scoped := *m
 	scoped.runSession = session
 	if scoped.migrationsSchema == "" {
-		scoped.migrationsSchema = scoped.connectionSchemaName()
+		scoped.migrationsSchema = scoped.connectionMetadataSchema()
 	}
 	return &scoped
 }

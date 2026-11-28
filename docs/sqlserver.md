@@ -22,9 +22,12 @@ introspection, migration metadata, and write helpers:
 ptah db read --db-url 'sqlserver://sa:pass@localhost:1433?database=app&schema=audit&encrypt=disable'
 ```
 
-Ptah removes `schema` before handing the URL to the driver. If omitted, the
-default schema is `dbo`. `--migrations-schema` / `WithMigrationsTable(schema,
-table)` still takes precedence for migration metadata.
+Ptah removes `schema` before handing the URL to the driver. If omitted,
+introspection and write helpers work in the default schema of the connection's
+database user, and migration metadata stays in `dbo`, so accounts with
+different default schemas read the same history. `--migrations-schema` /
+`WithMigrationsTable(schema, table)` still takes precedence for migration
+metadata.
 
 ## Supported Surface
 

@@ -48,7 +48,13 @@ read as `dbo`'s:
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
 ```
 
-`--migrations-schema` takes precedence for migration metadata.
+Ptah keeps its own tables in the schema the `schema` parameter names, or else
+in `dbo`, whatever the default schema of the connection's user is: the
+migration history with its log, tags and repeatable record, and the schema
+apply log. A database migrated as `sa` keeps its history in `dbo`, and an
+account whose default schema is `app` reads that history, so it does not run
+the migrations again. `--migrations-schema` takes precedence for the migration
+history.
 
 ## Supported surface
 

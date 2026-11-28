@@ -1,6 +1,7 @@
 package migrator
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -1107,10 +1108,12 @@ func revisionEngineClauseFor(dialect, engine string) string {
 // WithMigrationsTable returns a copy of the migrator that records applied
 // migrations in the named schema and table. An empty table name falls back to
 // the revision-table format's default name. An empty schema puts the table in
-// the connection's default schema, with one exception: Atlas's own table, the
-// Atlas layout under its default name, goes where Atlas keeps it, which on the
-// PostgreSQL family through a URL that pins no search_path is the
-// atlas_schema_revisions schema.
+// the connection's default schema, which on SQL Server is the schema the URL's
+// schema parameter names, else dbo, whatever the account's default schema is
+// (see [catalog.ServerInfo.MetadataSchema]). Atlas's own table, the Atlas
+// layout under its default name, is the one exception: it goes where Atlas
+// keeps it, which on the PostgreSQL family through a URL that pins no
+// search_path is the atlas_schema_revisions schema.
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp := *m
 	tmp.migrationsSchema = strings.TrimSpace(schema)
@@ -1234,6 +1237,19 @@ func (m *Migrator) connectionSchemaName() string {
 		return ""
 	}
 	return m.conn.Info().Schema
+}
+
+// connectionMetadataSchema is the schema the connection keeps the migrator's
+// tables in when none is configured: [catalog.ServerInfo.MetadataSchema], or
+// the connection's schema where the connection states none. A session that
+// pins its tables to a schema pins this one, so a run reads and writes the
+// history where the next run, as another account, looks for it.
+func (m *Migrator) connectionMetadataSchema() string {
+	if m.conn == nil {
+		return ""
+	}
+	info := m.conn.Info()
+	return cmp.Or(info.MetadataSchema, info.Schema)
 }
 
 func sqlStringLiteral(value string) string {
@@ -1557,7 +1573,7 @@ func (m *Migrator) ensureMigrationsVersionColumn(ctx context.Context) error {
 }
 
 func (m *Migrator) metadataTableSchemaName() string {
-	return metadataTableSchemaName(m.connectionDialect(), m.connectionSchemaName(), m.migrationsSchema)
+	return metadataTableSchemaName(m.connectionDialect(), m.connectionMetadataSchema(), m.migrationsSchema)
 }
 
 // metadataTableSchemaName is the schema the metadata tables live in. Each
@@ -1707,7 +1723,7 @@ func (m *Migrator) withMigrationMetadataSession(ctx context.Context, use func(*M
 		scoped := *m
 		scoped.conn = conn
 		if scoped.migrationsSchema == "" {
-			scoped.migrationsSchema = scoped.connectionSchemaName()
+			scoped.migrationsSchema = scoped.connectionMetadataSchema()
 		}
 		if err := scoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
 			return err
@@ -3565,7 +3581,7 @@ func (m *Migrator) withTransactionalMigrationSession(
 		scoped := *m
 		scoped.conn = conn
 		if scoped.migrationsSchema == "" {
-			scoped.migrationsSchema = scoped.connectionSchemaName()
+			scoped.migrationsSchema = scoped.connectionMetadataSchema()
 		}
 		if err := scoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
 			return err

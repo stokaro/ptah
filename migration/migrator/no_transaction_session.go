@@ -44,7 +44,7 @@ func (m *Migrator) withNoTransactionSession(
 			metadataScoped := *m
 			metadataScoped.conn = metadataConn
 			if metadataScoped.migrationsSchema == "" {
-				metadataScoped.migrationsSchema = metadataScoped.connectionSchemaName()
+				metadataScoped.migrationsSchema = metadataScoped.connectionMetadataSchema()
 			}
 			if err := metadataScoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
 				return err
@@ -72,7 +72,7 @@ func (m *Migrator) withNoTransactionSession(
 			// shadow the revision table.
 			scoped.conn = conn
 			if scoped.migrationsSchema == "" {
-				scoped.migrationsSchema = scoped.connectionSchemaName()
+				scoped.migrationsSchema = scoped.connectionMetadataSchema()
 			}
 		}
 		return use(&scoped)

@@ -1318,6 +1318,19 @@ type ServerInfo struct {
 	// dialect has a selectable schema, a URL naming one selects it here.
 	Schema string `json:"schema"`
 
+	// MetadataSchema is the schema Ptah keeps its own tables in on this
+	// connection when no setting names one: the migration history with its
+	// log, its tag table and its record of repeatable migrations, and the
+	// schema apply log. Empty means the schema Schema names.
+	//
+	// It differs from Schema where an account's default schema must not
+	// decide it. On SQL Server it is the schema the URL's schema parameter
+	// names, else dbo, while Schema follows the default schema of the
+	// connection's user: two accounts that share a database need not share a
+	// default schema, and a history kept in one account's default schema reads
+	// as empty to the other, which then runs every migration again.
+	MetadataSchema string `json:"metadata_schema,omitempty"`
+
 	// WholeServer reports a connection to a whole MySQL or MariaDB server:
 	// one opened from a URL that names no database, which
 	// dbschema.ConnectToServer accepts. Schema is empty then, a read of the
